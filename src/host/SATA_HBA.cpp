@@ -153,16 +153,15 @@ namespace Host_Components
 		//For simplicity, MQSim's SATA host interface uses NVMe opcodes
 		if (request->Type == Host_IO_Request_Type::READ) {
 			ncq_entry->Opcode = NVME_READ_OPCODE;
-			ncq_entry->Command_specific[0] = (uint32_t)request->Start_LBA;
-			ncq_entry->Command_specific[1] = (uint32_t)(request->Start_LBA >> 32);
-			ncq_entry->Command_specific[2] = ((uint32_t)((uint16_t)request->LBA_count)) & (uint32_t)(0x0000ffff);
-			ncq_entry->PRP_entry_1 = (DATA_MEMORY_REGION);//Dummy addresses, just to emulate data read/write access
-			ncq_entry->PRP_entry_2 = (DATA_MEMORY_REGION + 0x1000);//Dummy addresses
-		} else {
+		} else if (request->Type == Host_IO_Request_Type::WRITE) {
 			ncq_entry->Opcode = NVME_WRITE_OPCODE;
-			ncq_entry->Command_specific[0] = (uint32_t)request->Start_LBA;
-			ncq_entry->Command_specific[1] = (uint32_t)(request->Start_LBA >> 32);
-			ncq_entry->Command_specific[2] = ((uint32_t)((uint16_t)request->LBA_count)) & (uint32_t)(0x0000ffff);
+		} else {
+			ncq_entry->Opcode = SATA_DATASET_MANAGEMENT_OPCODE;
+		}
+		ncq_entry->Command_specific[0] = (uint32_t)request->Start_LBA;
+		ncq_entry->Command_specific[1] = (uint32_t)(request->Start_LBA >> 32);
+		ncq_entry->Command_specific[2] = ((uint32_t)((uint16_t)request->LBA_count)) & (uint32_t)(0x0000ffff);
+		if (request->Type != Host_IO_Request_Type::TRIM) {
 			ncq_entry->PRP_entry_1 = (DATA_MEMORY_REGION);//Dummy addresses, just to emulate data read/write access
 			ncq_entry->PRP_entry_2 = (DATA_MEMORY_REGION + 0x1000);//Dummy addresses
 		}

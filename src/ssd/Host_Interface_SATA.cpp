@@ -63,10 +63,15 @@ namespace SSD_Components
 			segment_user_request(request);
 
 			((Host_Interface_SATA*)host_interface)->broadcast_user_request_arrival_signal(request);
-		} else {//This is a write request
+		} else if (request->Type == UserRequestType::WRITE) {//This is a write request
 			((Input_Stream_SATA*)input_streams[SATA_STREAM_ID])->Waiting_user_requests.push_back(request);
 			((Input_Stream_SATA*)input_streams[SATA_STREAM_ID])->STAT_number_of_write_requests++;
 			((Host_Interface_SATA*)host_interface)->request_fetch_unit->Fetch_write_data(request);
+		} else {
+			((Input_Stream_SATA*)input_streams[SATA_STREAM_ID])->Waiting_user_requests.push_back(request);
+			((Input_Stream_SATA*)input_streams[SATA_STREAM_ID])->STAT_number_of_trim_requests++;
+			segment_user_request(request);
+			((Host_Interface_SATA*)host_interface)->broadcast_user_request_arrival_signal(request);
 		}
 	}
 
@@ -148,7 +153,7 @@ namespace SSD_Components
 			}
 			LPA_type lpa = internal_lsa / host_interface->sectors_per_page;
 
-			page_status_type temp = ~(0xffffffffffffffff << (int)transaction_size);
+			page_status_type temp = transaction_size == 64 ? FULL_PROGRAMMED_PAGE : ~((page_status_type)FULL_PROGRAMMED_PAGE << (int)transaction_size);
 			access_status_bitmap = temp << (int)(internal_lsa % host_interface->sectors_per_page);
 
 			if (user_request->Type == UserRequestType::READ) {
@@ -156,11 +161,13 @@ namespace SSD_Components
 					transaction_size * SECTOR_SIZE_IN_BYTE, lpa, NO_PPA, user_request, 0, access_status_bitmap, CurrentTimeStamp);
 				user_request->Transaction_list.push_back(transaction);
 				input_streams[SATA_STREAM_ID]->STAT_number_of_read_transactions++;
-			} else {//user_request->Type == UserRequestType::WRITE
+			} else if (user_request->Type == UserRequestType::WRITE) {
 				NVM_Transaction_Flash_WR* transaction = new NVM_Transaction_Flash_WR(Transaction_Source_Type::USERIO, SATA_STREAM_ID,
 					transaction_size * SECTOR_SIZE_IN_BYTE, lpa, user_request, 0, access_status_bitmap, CurrentTimeStamp);
 				user_request->Transaction_list.push_back(transaction);
 				input_streams[SATA_STREAM_ID]->STAT_number_of_write_transactions++;
+			} else {
+				user_request->Trim_operations.push_back(Trim_Operation(lpa, access_status_bitmap));
 			}
 
 			lsa = lsa + transaction_size;
@@ -216,6 +223,12 @@ namespace SSD_Components
 						new_request->Start_LBA = ((LHA_type)sqe->Command_specific[1]) << 31 | (LHA_type)sqe->Command_specific[0];//Command Dword 10 and Command Dword 11
 						new_request->SizeInSectors = sqe->Command_specific[2] & (LHA_type)(0x0000ffff);
 						new_request->Size_in_byte = new_request->SizeInSectors * SECTOR_SIZE_IN_BYTE;
+						break;
+					case SATA_DATASET_MANAGEMENT_OPCODE:
+						new_request->Type = UserRequestType::TRIM;
+						new_request->Start_LBA = ((LHA_type)sqe->Command_specific[1]) << 31 | (LHA_type)sqe->Command_specific[0];
+						new_request->SizeInSectors = sqe->Command_specific[2] & (LHA_type)(0x0000ffff);
+						new_request->Size_in_byte = 0;
 						break;
 					default:
 						throw std::invalid_argument("SATA command is not supported!");

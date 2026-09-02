@@ -37,10 +37,19 @@ Host_IO_Request *IO_Flow_Trace_Based::Generate_next_request()
 		request->Type = Host_IO_Request_Type::WRITE;
 		STAT_generated_write_request_count++;
 	}
-	else
+	else if (current_trace_line[ASCIITraceTypeColumn].compare(ASCIITraceReadCode) == 0)
 	{
 		request->Type = Host_IO_Request_Type::READ;
 		STAT_generated_read_request_count++;
+	}
+	else if (current_trace_line[ASCIITraceTypeColumn].compare(ASCIITraceTrimCode) == 0)
+	{
+		request->Type = Host_IO_Request_Type::TRIM;
+		STAT_generated_trim_request_count++;
+	}
+	else
+	{
+		PRINT_ERROR("Unsupported request type in trace: " << current_trace_line[ASCIITraceTypeColumn])
 	}
 
 	char *pEnd;
@@ -95,6 +104,12 @@ void IO_Flow_Trace_Based::Start_simulation()
 		if (current_trace_line.size() != ASCIIItemsPerLine)
 		{
 			break;
+		}
+		if (current_trace_line[ASCIITraceTypeColumn].compare(ASCIITraceWriteCode) != 0 &&
+			current_trace_line[ASCIITraceTypeColumn].compare(ASCIITraceReadCode) != 0 &&
+			current_trace_line[ASCIITraceTypeColumn].compare(ASCIITraceTrimCode) != 0)
+		{
+			PRINT_ERROR("Unsupported request type in trace: " << current_trace_line[ASCIITraceTypeColumn])
 		}
 		total_requests_in_file++;
 		sim_time_type prev_time = last_request_arrival_time;
@@ -193,6 +208,7 @@ void IO_Flow_Trace_Based::Get_statistics(Utils::Workload_Statistics &stats, LPA_
 	std::string trace_line;
 	char *pEnd;
 	sim_time_type last_request_arrival_time = 0;
+	sim_time_type last_data_request_arrival_time = 0;
 	sim_time_type sum_inter_arrival = 0;
 	uint64_t sum_request_size = 0;
 	std::vector<std::string> line_splitted;
@@ -205,14 +221,25 @@ void IO_Flow_Trace_Based::Get_statistics(Utils::Workload_Statistics &stats, LPA_
 		{
 			break;
 		}
+		if (line_splitted[ASCIITraceTypeColumn].compare(ASCIITraceWriteCode) != 0 &&
+			line_splitted[ASCIITraceTypeColumn].compare(ASCIITraceReadCode) != 0 &&
+			line_splitted[ASCIITraceTypeColumn].compare(ASCIITraceTrimCode) != 0)
+		{
+			PRINT_ERROR("Unsupported request type in trace: " << line_splitted[ASCIITraceTypeColumn])
+		}
 		sim_time_type prev_time = last_request_arrival_time;
 		last_request_arrival_time = std::strtoull(line_splitted[ASCIITraceTimeColumn].c_str(), &pEnd, 10);
 		if (last_request_arrival_time < prev_time)
 		{
 			PRINT_ERROR("Unexpected request arrival time: " << last_request_arrival_time << "\nMQSim expects request arrival times to be monotonic increasing in the input trace!")
 		}
-		sim_time_type diff = (last_request_arrival_time - prev_time) / 1000; //The arrival rate histogram is stored in the microsecond unit
-		sum_inter_arrival += last_request_arrival_time - prev_time;
+		if (line_splitted[ASCIITraceTypeColumn].compare(ASCIITraceTrimCode) == 0)
+		{
+			continue; //TRIM does not contribute data-access statistics used by preconditioning.
+		}
+		sim_time_type diff = (last_request_arrival_time - last_data_request_arrival_time) / 1000; //The arrival rate histogram is stored in the microsecond unit
+		sum_inter_arrival += last_request_arrival_time - last_data_request_arrival_time;
+		last_data_request_arrival_time = last_request_arrival_time;
 
 		unsigned int LBA_count = std::strtoul(line_splitted[ASCIITraceSizeColumn].c_str(), &pEnd, 0);
 		sum_request_size += LBA_count;
@@ -328,8 +355,16 @@ void IO_Flow_Trace_Based::Get_statistics(Utils::Workload_Statistics &stats, LPA_
 		stats.Total_generated_requests++;
 	}
 	trace_file_temp.close();
-	stats.Average_request_size_sector = (unsigned int)(sum_request_size / stats.Total_generated_requests);
-	stats.Average_inter_arrival_time_nano_sec = sum_inter_arrival / stats.Total_generated_requests;
+	if (stats.Total_generated_requests > 0)
+	{
+		stats.Average_request_size_sector = (unsigned int)(sum_request_size / stats.Total_generated_requests);
+		stats.Average_inter_arrival_time_nano_sec = sum_inter_arrival / stats.Total_generated_requests;
+	}
+	else
+	{
+		stats.Average_request_size_sector = 0;
+		stats.Average_inter_arrival_time_nano_sec = 0;
+	}
 
 	stats.Initial_occupancy_ratio = initial_occupancy_ratio;
 	stats.Replay_no = total_replay_no;

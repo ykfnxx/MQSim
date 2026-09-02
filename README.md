@@ -140,7 +140,11 @@ You can define up to 8 different workloads within each IO_Scenario tag. Each wor
 
 ### Defining a Trace-based Workload
 You can define a trace-based workload for MQSim, using the <IO_Flow_Parameter_Set_Trace_Based> XML tag. Currently, MQSim can execute ASCII disk traces define in [8] in which each line of the trace file has the following format:
-1.Request_Arrival_Time 2.Device_Number 3.Starting_Logical_Sector_Address 4.Request_Size_In_Sectors 5.Type_of_Requests[0 for write, 1 for read]
+1.Request_Arrival_Time 2.Device_Number 3.Starting_Logical_Sector_Address 4.Request_Size_In_Sectors 5.Type_of_Requests[0 for write, 1 for read, 2 for TRIM]
+
+TRIM is modeled as an FTL control operation rather than a flash transaction. It clears the requested sectors from the page mapping; when no mapped sectors remain, the existing physical page is marked invalid through the normal block-manager path. Consequently, the existing GC and wear-leveling policies observe the additional invalid pages without requiring a separate NAND command or a change to their selection logic. TRIM currently requires `Address_Mapping` to be `PAGE_LEVEL` and `Device_Level_Data_Caching_Mode` to be `TURNED_OFF`. Disabling the data cache prevents an outstanding dirty cache writeback from restoring a mapping after it has been trimmed.
+
+For a DWPDSim CSV adapter, convert `offset_bytes` and `length_bytes` to 512-byte sectors and emit request type `2` for an invalidation/trim record. The included `tests/trim/test_trim.sh` workload covers partial-page trim, full-page invalidation, repeated trim, and rewriting a trimmed LBA.
 
 The following parameters are used to define a trace-based workload:
 1. **Priority_Class:** the priority class of the I/O queue associated with this I/O request. Range = {URGENT, HIGH, MEDIUM, LOW}.

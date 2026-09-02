@@ -20,6 +20,10 @@ namespace SSD_Components
 	unsigned int Address_Mapping_Unit_Hybrid::Get_cmt_capacity() { return 0; }
 	unsigned int Address_Mapping_Unit_Hybrid::Get_current_cmt_occupancy_for_stream(stream_id_type stream_id) { return 0; }
 	void Address_Mapping_Unit_Hybrid::Translate_lpa_to_ppa_and_dispatch(const std::list<NVM_Transaction*>& transaction_list) {}
+	void Address_Mapping_Unit_Hybrid::Trim(const stream_id_type stream_id, const LPA_type lpa, const page_status_type sector_bitmap, User_Request* user_request)
+	{
+		PRINT_ERROR("TRIM is supported only by the page-level address mapping unit.")
+	}
 	void Address_Mapping_Unit_Hybrid::Get_data_mapping_info_for_gc(const stream_id_type stream_id, const LPA_type lpa, PPA_type& ppa, page_status_type& page_state) {}
 	void Address_Mapping_Unit_Hybrid::Get_translation_mapping_info_for_gc(const stream_id_type stream_id, const MVPN_type mvpn, MPPN_type& mppa, sim_time_type& timestamp) {}
 

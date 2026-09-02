@@ -31,6 +31,7 @@ namespace SSD_Components
 
 	unsigned int Stats::Total_gc_executions = 0, Stats::Total_gc_executions_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
 	unsigned int Stats::Total_page_movements_for_gc = 0, Stats::Total_gc_page_movements_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
+	unsigned long long Stats::Total_trimmed_sectors = 0, Stats::Total_pages_invalidated_by_trim = 0;
 
 	unsigned int Stats::Total_wl_executions = 0, Stats::Total_wl_executions_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
 	unsigned int Stats::Total_page_movements_for_wl = 0, Stats::Total_wl_page_movements_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
@@ -71,6 +72,7 @@ namespace SSD_Components
 		total_CMT_queries = 0; total_readTR_CMT_queries = 0; total_writeTR_CMT_queries = 0;
 
 		Total_gc_executions = 0;  Total_page_movements_for_gc = 0;
+		Total_trimmed_sectors = 0; Total_pages_invalidated_by_trim = 0;
 		Total_wl_executions = 0;  Total_page_movements_for_wl = 0;
 
 		for (stream_id_type stream_id = 0; stream_id < MAX_SUPPORT_STREAMS; stream_id++) {

@@ -52,6 +52,14 @@ namespace SSD_Components
 
 	void Data_Cache_Manager_Flash_Simple::process_new_user_request(User_Request* user_request)
 	{
+		if (user_request->Type == UserRequestType::TRIM) {
+			if (caching_mode_per_input_stream[user_request->Stream_id] != Caching_Mode::TURNED_OFF) {
+				PRINT_ERROR("TRIM requires the device data cache to be TURNED_OFF to prevent stale writeback data from being remapped.")
+			}
+			static_cast<FTL*>(nvm_firmware)->Trim(user_request);
+			return;
+		}
+
 		//This condition shouldn't happen, but we check it
 		if (user_request->Transaction_list.size() == 0) {
 			return;

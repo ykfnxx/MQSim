@@ -507,6 +507,51 @@ namespace SSD_Components
 		}
 	}
 
+	void Address_Mapping_Unit_Page_Level::Trim(const stream_id_type stream_id, const LPA_type lpa, const page_status_type sector_bitmap, User_Request* user_request)
+	{
+		if (stream_id >= no_of_input_streams || lpa >= domains[stream_id]->Total_logical_pages_no) {
+			PRINT_ERROR("TRIM address is outside the logical address range allocated to the stream.")
+		}
+		if (is_lpa_locked_for_gc(stream_id, lpa)) {
+			domains[stream_id]->Trim_operations_behind_LPA_barrier.insert(std::make_pair(lpa, Pending_Trim_Operation(sector_bitmap, user_request)));
+			return;
+		}
+
+		execute_trim(stream_id, lpa, sector_bitmap);
+		ftl->Trim_operation_completed(user_request);
+	}
+
+	void Address_Mapping_Unit_Page_Level::execute_trim(const stream_id_type stream_id, const LPA_type lpa, const page_status_type sector_bitmap)
+	{
+		AddressMappingDomain* domain = domains[stream_id];
+		bool mapping_entry_accessible = domain->Mapping_entry_accessible(ideal_mapping_table, stream_id, lpa);
+		PPA_type ppa = mapping_entry_accessible ? domain->Get_ppa(ideal_mapping_table, stream_id, lpa) : domain->GlobalMappingTable[lpa].PPA;
+		page_status_type page_status = mapping_entry_accessible ? domain->Get_page_status(ideal_mapping_table, stream_id, lpa) : domain->GlobalMappingTable[lpa].WrittenStateBitmap;
+		page_status_type trimmed_sectors = page_status & sector_bitmap;
+
+		if (ppa == NO_PPA || trimmed_sectors == UNWRITTEN_LOGICAL_PAGE) {
+			return;
+		}
+
+		page_status_type remaining_sectors = page_status & ~sector_bitmap;
+		if (remaining_sectors == UNWRITTEN_LOGICAL_PAGE) {
+			NVM::FlashMemory::Physical_Page_Address address;
+			Convert_ppa_to_address(ppa, address);
+			block_manager->Invalidate_page_in_block(stream_id, address);
+			ppa = NO_PPA;
+			Stats::Total_pages_invalidated_by_trim++;
+		}
+
+		if (mapping_entry_accessible) {
+			domain->Update_mapping_info(ideal_mapping_table, stream_id, lpa, ppa, remaining_sectors);
+		} else {
+			domain->GlobalMappingTable[lpa].PPA = ppa;
+			domain->GlobalMappingTable[lpa].WrittenStateBitmap = remaining_sectors;
+			domain->GlobalMappingTable[lpa].TimeStamp = CurrentTimeStamp;
+		}
+		Stats::Total_trimmed_sectors += count_sector_no_from_status_bitmap(trimmed_sectors);
+	}
+
 	bool Address_Mapping_Unit_Page_Level::query_cmt(NVM_Transaction_Flash* transaction)
 	{
 		stream_id_type stream_id = transaction->Stream_id;
@@ -1818,6 +1863,16 @@ namespace SSD_Components
 			delete (*write_tr).second;
 			domains[stream_id]->Write_transactions_behind_LPA_barrier.erase(write_tr);
 			write_tr = domains[stream_id]->Write_transactions_behind_LPA_barrier.find(lpa);
+		}
+
+		//A TRIM that arrived while GC was relocating this LPA must observe the relocated mapping.
+		auto trim_operation = domains[stream_id]->Trim_operations_behind_LPA_barrier.find(lpa);
+		while (trim_operation != domains[stream_id]->Trim_operations_behind_LPA_barrier.end()) {
+			Pending_Trim_Operation operation = trim_operation->second;
+			domains[stream_id]->Trim_operations_behind_LPA_barrier.erase(trim_operation);
+			execute_trim(stream_id, lpa, operation.Sector_bitmap);
+			ftl->Trim_operation_completed(operation.Request);
+			trim_operation = domains[stream_id]->Trim_operations_behind_LPA_barrier.find(lpa);
 		}
 	}
 

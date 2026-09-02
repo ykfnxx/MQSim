@@ -4,7 +4,7 @@
 namespace SSD_Components
 {
 	Input_Stream_Base::Input_Stream_Base() :
-		STAT_number_of_read_requests(0), STAT_number_of_write_requests(0), 
+		STAT_number_of_read_requests(0), STAT_number_of_write_requests(0), STAT_number_of_trim_requests(0),
 		STAT_number_of_read_transactions(0), STAT_number_of_write_transactions(0),
 		STAT_sum_of_read_transactions_execution_time(0), STAT_sum_of_read_transactions_transfer_time(0), STAT_sum_of_read_transactions_waiting_time(0),
 		STAT_sum_of_write_transactions_execution_time(0), STAT_sum_of_write_transactions_transfer_time(0), STAT_sum_of_write_transactions_waiting_time(0)

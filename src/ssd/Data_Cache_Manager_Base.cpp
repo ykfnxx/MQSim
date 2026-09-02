@@ -68,4 +68,9 @@ namespace SSD_Components
 	{
 		this->host_interface = host_interface;
 	}
+
+	void Data_Cache_Manager_Base::Complete_trim_request(User_Request* user_request)
+	{
+		broadcast_user_request_serviced_signal(user_request);
+	}
 }

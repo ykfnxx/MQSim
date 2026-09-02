@@ -47,7 +47,7 @@ namespace Host_Components
 					 sim_time_type stop_time, double initial_occupancy_ratio, unsigned int total_requets_to_be_generated,
 					 HostInterface_Types SSD_device_type, PCIe_Root_Complex *pcie_root_complex, SATA_HBA *sata_hba,
 					 bool enabled_logging, sim_time_type logging_period, std::string logging_file_path);
-		~IO_Flow_Base();
+		virtual ~IO_Flow_Base();
 		void Start_simulation();
 		IO_Flow_Priority_Class::Priority Priority_class() { return priority_class; }
 		virtual Host_IO_Request* Generate_next_request() = 0;
@@ -93,16 +93,16 @@ namespace Host_Components
 		void NVMe_update_and_submit_completion_queue_tail();
 
 		//Variables used to collect statistics
-		unsigned int STAT_generated_request_count, STAT_generated_read_request_count, STAT_generated_write_request_count;
+		unsigned int STAT_generated_request_count, STAT_generated_read_request_count, STAT_generated_write_request_count, STAT_generated_trim_request_count;
 		unsigned int STAT_ignored_request_count;
-		unsigned int STAT_serviced_request_count, STAT_serviced_read_request_count, STAT_serviced_write_request_count;
+		unsigned int STAT_serviced_request_count, STAT_serviced_read_request_count, STAT_serviced_write_request_count, STAT_serviced_trim_request_count;
 		sim_time_type STAT_sum_device_response_time, STAT_sum_device_response_time_read, STAT_sum_device_response_time_write;
 		sim_time_type STAT_min_device_response_time, STAT_min_device_response_time_read, STAT_min_device_response_time_write;
 		sim_time_type STAT_max_device_response_time, STAT_max_device_response_time_read, STAT_max_device_response_time_write;
 		sim_time_type STAT_sum_request_delay, STAT_sum_request_delay_read, STAT_sum_request_delay_write;
 		sim_time_type STAT_min_request_delay, STAT_min_request_delay_read, STAT_min_request_delay_write;
 		sim_time_type STAT_max_request_delay, STAT_max_request_delay_read, STAT_max_request_delay_write;
-		sim_time_type STAT_transferred_bytes_total, STAT_transferred_bytes_read, STAT_transferred_bytes_write;
+		sim_time_type STAT_transferred_bytes_total, STAT_transferred_bytes_read, STAT_transferred_bytes_write, STAT_trimmed_bytes;
 		int progress;
 		int next_progress_step = 0;
 

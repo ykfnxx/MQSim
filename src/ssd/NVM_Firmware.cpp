@@ -7,6 +7,10 @@ namespace SSD_Components
 	{
 	}
 
+	NVM_Firmware::~NVM_Firmware()
+	{
+	}
+
 	void NVM_Firmware::Validate_simulation_config()
 	{
 	}

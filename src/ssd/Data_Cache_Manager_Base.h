@@ -36,6 +36,7 @@ namespace SSD_Components
 		typedef void(*MemoryTransactionServicedSignalHanderType) (NVM_Transaction*);
 		void Connect_to_user_memory_transaction_serviced_signal(MemoryTransactionServicedSignalHanderType);
 		void Set_host_interface(Host_Interface_Base* host_interface);
+		void Complete_trim_request(User_Request* user_request);
 		virtual void Do_warmup(std::vector<Utils::Workload_Statistics*> workload_stats) = 0;
 	protected:
 		static Data_Cache_Manager_Base* _my_instance;

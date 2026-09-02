@@ -873,6 +873,14 @@ namespace SSD_Components
 		val = std::to_string(Stats::Total_gc_executions);
 		xmlwriter.Write_attribute_string_inline(attr, val);
 
+		attr = "Trimmed_Sector_Count";
+		val = std::to_string(Stats::Total_trimmed_sectors);
+		xmlwriter.Write_attribute_string_inline(attr, val);
+
+		attr = "Pages_Invalidated_By_Trim";
+		val = std::to_string(Stats::Total_pages_invalidated_by_trim);
+		xmlwriter.Write_attribute_string_inline(attr, val);
+
 		attr = "Average_Page_Movement_For_GC";
 		val = std::to_string(double(Stats::Total_page_movements_for_gc) / double(Stats::Total_gc_executions));
 		xmlwriter.Write_attribute_string_inline(attr, val);
@@ -904,5 +912,31 @@ namespace SSD_Components
 	page_status_type FTL::Find_NVM_subunit_access_bitmap(LHA_type lha)
 	{
 		return ((page_status_type)~(0xffffffffffffffff << (int)1)) << (int)(lha % page_size_in_sectors);
+	}
+
+	void FTL::Trim(User_Request* user_request)
+	{
+		std::vector<Trim_Operation> trim_operations(user_request->Trim_operations.begin(), user_request->Trim_operations.end());
+		user_request->Trim_operations.clear();
+		user_request->Pending_trim_operations = (unsigned int)trim_operations.size();
+		if (trim_operations.empty()) {
+			Data_cache_manager->Complete_trim_request(user_request);
+			return;
+		}
+
+		for (std::vector<Trim_Operation>::const_iterator operation = trim_operations.begin(); operation != trim_operations.end(); operation++) {
+			Address_Mapping_Unit->Trim(user_request->Stream_id, operation->LPA, operation->Sector_bitmap, user_request);
+		}
+	}
+
+	void FTL::Trim_operation_completed(User_Request* user_request)
+	{
+		if (user_request->Pending_trim_operations == 0) {
+			PRINT_ERROR("Unexpected TRIM completion with no pending operation.")
+		}
+		user_request->Pending_trim_operations--;
+		if (user_request->Pending_trim_operations == 0) {
+			Data_cache_manager->Complete_trim_request(user_request);
+		}
 	}
 }

@@ -81,11 +81,18 @@ inline void Input_Stream_Manager_NVMe::Handle_new_arrived_request(User_Request *
 
 		((Host_Interface_NVMe *)host_interface)->broadcast_user_request_arrival_signal(request);
 	}
-	else
+	else if (request->Type == UserRequestType::WRITE)
 	{ //This is a write request
 		((Input_Stream_NVMe *)input_streams[request->Stream_id])->Waiting_user_requests.push_back(request);
 		((Input_Stream_NVMe *)input_streams[request->Stream_id])->STAT_number_of_write_requests++;
 		((Host_Interface_NVMe *)host_interface)->request_fetch_unit->Fetch_write_data(request);
+	}
+	else
+	{
+		((Input_Stream_NVMe *)input_streams[request->Stream_id])->Waiting_user_requests.push_back(request);
+		((Input_Stream_NVMe *)input_streams[request->Stream_id])->STAT_number_of_trim_requests++;
+		segment_user_request(request);
+		((Host_Interface_NVMe *)host_interface)->broadcast_user_request_arrival_signal(request);
 	}
 }
 
@@ -191,7 +198,7 @@ void Input_Stream_Manager_NVMe::segment_user_request(User_Request *user_request)
 		}
 		LPA_type lpa = internal_lsa / host_interface->sectors_per_page;
 
-		page_status_type temp = ~(0xffffffffffffffff << (int)transaction_size);
+		page_status_type temp = transaction_size == 64 ? FULL_PROGRAMMED_PAGE : ~((page_status_type)FULL_PROGRAMMED_PAGE << (int)transaction_size);
 		access_status_bitmap = temp << (int)(internal_lsa % host_interface->sectors_per_page);
 
 		if (user_request->Type == UserRequestType::READ)
@@ -201,12 +208,16 @@ void Input_Stream_Manager_NVMe::segment_user_request(User_Request *user_request)
 			user_request->Transaction_list.push_back(transaction);
 			input_streams[user_request->Stream_id]->STAT_number_of_read_transactions++;
 		}
-		else
+		else if (user_request->Type == UserRequestType::WRITE)
 		{ //user_request->Type == UserRequestType::WRITE
 			NVM_Transaction_Flash_WR *transaction = new NVM_Transaction_Flash_WR(Transaction_Source_Type::USERIO, user_request->Stream_id,
 																				 transaction_size * SECTOR_SIZE_IN_BYTE, lpa, user_request, user_request->Priority_class, 0, access_status_bitmap, CurrentTimeStamp);
 			user_request->Transaction_list.push_back(transaction);
 			input_streams[user_request->Stream_id]->STAT_number_of_write_transactions++;
+		}
+		else
+		{
+			user_request->Trim_operations.push_back(Trim_Operation(lpa, access_status_bitmap));
 		}
 
 		lsa = lsa + transaction_size;
@@ -304,6 +315,12 @@ void Request_Fetch_Unit_NVMe::Process_pcie_read_message(uint64_t address, void *
 			new_request->Start_LBA = ((LHA_type)sqe->Command_specific[1]) << 31 | (LHA_type)sqe->Command_specific[0]; //Command Dword 10 and Command Dword 11
 			new_request->SizeInSectors = sqe->Command_specific[2] & (LHA_type)(0x0000ffff);
 			new_request->Size_in_byte = new_request->SizeInSectors * SECTOR_SIZE_IN_BYTE;
+			break;
+		case NVME_DATASET_MANAGEMENT_OPCODE:
+			new_request->Type = UserRequestType::TRIM;
+			new_request->Start_LBA = ((LHA_type)sqe->Command_specific[1]) << 31 | (LHA_type)sqe->Command_specific[0];
+			new_request->SizeInSectors = sqe->Command_specific[2] & (LHA_type)(0x0000ffff);
+			new_request->Size_in_byte = 0;
 			break;
 		default:
 			throw std::invalid_argument("NVMe command is not supported!");

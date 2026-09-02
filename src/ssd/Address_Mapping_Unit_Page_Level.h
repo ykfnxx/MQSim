@@ -40,6 +40,14 @@ namespace SSD_Components
 		uint64_t WrittenStateBitmap;
 		data_timestamp_type TimeStamp;
 	};
+
+	struct Pending_Trim_Operation
+	{
+		page_status_type Sector_bitmap;
+		User_Request* Request;
+
+		Pending_Trim_Operation(page_status_type sector_bitmap, User_Request* request) : Sector_bitmap(sector_bitmap), Request(request) {}
+	};
 	
 	class Cached_Mapping_Table
 	{
@@ -109,6 +117,7 @@ namespace SSD_Components
 		std::set<MVPN_type> Locked_MVPNs;//Used to manage race conditions
 		std::multimap<LPA_type, NVM_Transaction_Flash*> Read_transactions_behind_LPA_barrier;
 		std::multimap<LPA_type, NVM_Transaction_Flash*> Write_transactions_behind_LPA_barrier;
+		std::multimap<LPA_type, Pending_Trim_Operation> Trim_operations_behind_LPA_barrier;
 		std::set<MVPN_type> MVPN_read_transactions_waiting_behind_barrier;
 		std::set<MVPN_type> MVPN_write_transaction_waiting_behind_barrier;
 
@@ -151,6 +160,7 @@ namespace SSD_Components
 		unsigned int Get_cmt_capacity();
 		unsigned int Get_current_cmt_occupancy_for_stream(stream_id_type stream_id);
 		void Translate_lpa_to_ppa_and_dispatch(const std::list<NVM_Transaction*>& transactionList);
+		void Trim(const stream_id_type stream_id, const LPA_type lpa, const page_status_type sector_bitmap, User_Request* user_request);
 		void Get_data_mapping_info_for_gc(const stream_id_type stream_id, const LPA_type lpa, PPA_type& ppa, page_status_type& page_state);
 		void Get_translation_mapping_info_for_gc(const stream_id_type stream_id, const MVPN_type mvpn, MPPN_type& mppa, sim_time_type& timestamp);
 		void Allocate_new_page_for_gc(NVM_Transaction_Flash_WR* transaction, bool is_translation_page);
@@ -197,6 +207,7 @@ namespace SSD_Components
 		void manage_mapping_transaction_facing_barrier(stream_id_type stream_id, MVPN_type mvpn, bool read);
 		bool is_lpa_locked_for_gc(stream_id_type stream_id, LPA_type lpa);
 		bool is_mvpn_locked_for_gc(stream_id_type stream_id, MVPN_type mvpn);
+		void execute_trim(const stream_id_type stream_id, const LPA_type lpa, const page_status_type sector_bitmap);
 	};
 
 }
