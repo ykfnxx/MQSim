@@ -61,8 +61,10 @@ namespace SSD_Components
 				if (_my_instance->block_manager->Block_has_ongoing_gc_wl(transaction->Address)) {
 					if (_my_instance->block_manager->Can_execute_gc_wl(transaction->Address)) {
 						NVM::FlashMemory::Physical_Page_Address gc_wl_candidate_address(transaction->Address);
+						_my_instance->address_mapping_unit->Set_barrier_for_accessing_physical_block(gc_wl_candidate_address);
 						Block_Pool_Slot_Type* block = &pbke->Blocks[transaction->Address.BlockID];
 						Stats::Total_gc_executions++;
+						Stats::Total_gc_executions_per_stream[block->Stream_id]++;
 						_my_instance->tsu->Prepare_for_transaction_submit();
 						NVM_Transaction_Flash_ER* gc_wl_erase_tr = new NVM_Transaction_Flash_ER(Transaction_Source_Type::GC_WL, block->Stream_id, gc_wl_candidate_address);
 						
@@ -74,6 +76,7 @@ namespace SSD_Components
 							for (flash_page_ID_type pageID = 0; pageID < block->Current_page_write_index; pageID++) {
 								if (_my_instance->block_manager->Is_page_valid(block, pageID)) {
 									Stats::Total_page_movements_for_gc++;
+									Stats::Total_gc_page_movements_per_stream[block->Stream_id]++;
 									gc_wl_candidate_address.PageID = pageID;
 									if (_my_instance->use_copyback) {
 										gc_wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, _my_instance->sector_no_per_page * SECTOR_SIZE_IN_BYTE,
@@ -95,6 +98,7 @@ namespace SSD_Components
 							}
 						}
 						block->Erase_transaction = gc_wl_erase_tr;
+						_my_instance->tsu->Submit_transaction(gc_wl_erase_tr);
 						_my_instance->tsu->Schedule();
 					}
 				}
@@ -105,6 +109,8 @@ namespace SSD_Components
 		switch (transaction->Type) {
 			case Transaction_Type::READ:
 			{
+				Stats::Total_gc_page_reads++;
+				Stats::Total_gc_page_reads_per_stream[transaction->Stream_id]++;
 				PPA_type ppa;
 				MPPN_type mppa;
 				page_status_type page_status_bitmap;
@@ -120,7 +126,19 @@ namespace SSD_Components
 						_my_instance->tsu->Submit_transaction(((NVM_Transaction_Flash_RD*)transaction)->RelatedWrite);
 						_my_instance->tsu->Schedule();
 					} else {
-						PRINT_ERROR("Inconsistency found when moving a page for GC/WL!")
+						NVM_Transaction_Flash_RD* gc_read = (NVM_Transaction_Flash_RD*)transaction;
+						NVM_Transaction_Flash_WR* gc_write = gc_read->RelatedWrite;
+						NVM_Transaction_Flash_ER* gc_erase = gc_write->RelatedErase;
+						gc_erase->Page_movement_activities.remove(gc_write);
+						delete gc_write;
+						gc_read->RelatedWrite = NULL;
+						Block_Pool_Slot_Type* victim = &pbke->Blocks[transaction->Address.BlockID];
+						if (_my_instance->block_manager->Is_page_valid(victim, transaction->Address.PageID)) {
+							_my_instance->block_manager->Invalidate_page_in_block(transaction->Stream_id, transaction->Address);
+						}
+							_my_instance->address_mapping_unit->Remove_barrier_for_accessing_mvpn(transaction->Stream_id, (MVPN_type)transaction->LPA);
+						Stats::Total_page_movements_for_gc--;
+						Stats::Total_gc_page_movements_per_stream[transaction->Stream_id]--;
 					}
 				} else {
 					_my_instance->address_mapping_unit->Get_data_mapping_info_for_gc(transaction->Stream_id, transaction->LPA, ppa, page_status_bitmap);
@@ -134,13 +152,27 @@ namespace SSD_Components
 						_my_instance->address_mapping_unit->Allocate_new_page_for_gc(((NVM_Transaction_Flash_RD*)transaction)->RelatedWrite, pbke->Blocks[transaction->Address.BlockID].Holds_mapping_data);
 						_my_instance->tsu->Submit_transaction(((NVM_Transaction_Flash_RD*)transaction)->RelatedWrite);
 						_my_instance->tsu->Schedule();
-					} else {
-						PRINT_ERROR("Inconsistency found when moving a page for GC/WL!")
-					}
+						} else {
+							NVM_Transaction_Flash_RD* gc_read = (NVM_Transaction_Flash_RD*)transaction;
+							NVM_Transaction_Flash_WR* gc_write = gc_read->RelatedWrite;
+							NVM_Transaction_Flash_ER* gc_erase = gc_write->RelatedErase;
+							gc_erase->Page_movement_activities.remove(gc_write);
+							delete gc_write;
+							gc_read->RelatedWrite = NULL;
+							Block_Pool_Slot_Type* victim = &pbke->Blocks[transaction->Address.BlockID];
+							if (_my_instance->block_manager->Is_page_valid(victim, transaction->Address.PageID)) {
+								_my_instance->block_manager->Invalidate_page_in_block(transaction->Stream_id, transaction->Address);
+							}
+							_my_instance->address_mapping_unit->Remove_barrier_for_accessing_lpa(transaction->Stream_id, transaction->LPA);
+							Stats::Total_page_movements_for_gc--;
+							Stats::Total_gc_page_movements_per_stream[transaction->Stream_id]--;
+						}
 				}
 				break;
 			}
 			case Transaction_Type::WRITE:
+				Stats::Total_gc_page_programs++;
+				Stats::Total_gc_page_programs_per_stream[transaction->Stream_id]++;
 				if (pbke->Blocks[((NVM_Transaction_Flash_WR*)transaction)->RelatedErase->Address.BlockID].Holds_mapping_data) {
 					_my_instance->address_mapping_unit->Remove_barrier_for_accessing_mvpn(transaction->Stream_id, (MVPN_type)transaction->LPA);
 					DEBUG(Simulator->Time() << ": MVPN=" << (MVPN_type)transaction->LPA << " unlocked!!");
@@ -262,8 +294,8 @@ namespace SSD_Components
 		//Run the state machine to protect against race condition
 		block_manager->GC_WL_started(wl_candidate_block_id);
 		pbke->Ongoing_erase_operations.insert(wl_candidate_block_id);
-		address_mapping_unit->Set_barrier_for_accessing_physical_block(wl_candidate_address);//Lock the block, so no user request can intervene while the GC is progressing
 		if (block_manager->Can_execute_gc_wl(wl_candidate_address)) {//If there are ongoing requests targeting the candidate block, the gc execution should be postponed
+			address_mapping_unit->Set_barrier_for_accessing_physical_block(wl_candidate_address);
 			Stats::Total_wl_executions++;
 			tsu->Prepare_for_transaction_submit();
 
@@ -273,7 +305,8 @@ namespace SSD_Components
 				NVM_Transaction_Flash_WR* wl_write = NULL;
 				for (flash_page_ID_type pageID = 0; pageID < block->Current_page_write_index; pageID++) {
 					if (block_manager->Is_page_valid(block, pageID)) {
-						Stats::Total_page_movements_for_gc;
+						Stats::Total_page_movements_for_wl++;
+						Stats::Total_wl_page_movements_per_stream[block->Stream_id]++;
 						wl_candidate_address.PageID = pageID;
 						if (use_copyback) {
 							wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,

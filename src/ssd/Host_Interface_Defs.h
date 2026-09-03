@@ -62,4 +62,15 @@ struct Submission_Queue_Entry
 	uint32_t Command_specific[6];
 };
 
+inline void Set_NVMe_LBA(Submission_Queue_Entry& entry, uint64_t lba)
+{
+	entry.Command_specific[0] = static_cast<uint32_t>(lba);
+	entry.Command_specific[1] = static_cast<uint32_t>(lba >> 32);
+}
+
+inline uint64_t Get_NVMe_LBA(const Submission_Queue_Entry& entry)
+{
+	return (static_cast<uint64_t>(entry.Command_specific[1]) << 32) | entry.Command_specific[0];
+}
+
 #endif // !NVME_DEFINISIONS_H

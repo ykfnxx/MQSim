@@ -23,6 +23,14 @@ namespace SSD_Components
 		this->input_streams.push_back(input_stream);
 	}
 
+	bool Input_Stream_Manager_SATA::Is_drained() const
+	{
+		const Input_Stream_SATA* stream = static_cast<const Input_Stream_SATA*>(input_streams.front());
+		return stream->Waiting_user_requests.empty() && stream->Completed_user_requests.empty() &&
+			stream->Waiting_write_data_transfers.empty() && stream->On_the_fly_requests == 0 &&
+			stream->Submission_head == stream->Submission_tail && stream->Completion_head == stream->Completion_tail;
+	}
+
 	void Input_Stream_Manager_SATA::Set_ncq_address(uint64_t submission_queue_base_address, uint64_t completion_queue_base_address)
 	{
 		((Input_Stream_SATA*)this->input_streams[SATA_STREAM_ID])->Submission_queue_base_address = submission_queue_base_address;
@@ -147,7 +155,7 @@ namespace SSD_Components
 			}
 			LHA_type internal_lsa = lsa - ((Input_Stream_SATA*)input_streams[SATA_STREAM_ID])->Start_logical_sector_address;//For each flow, all lsa's should be translated into a range starting from zero
 
-			transaction_size = host_interface->sectors_per_page - (unsigned int)(lsa % host_interface->sectors_per_page);
+			transaction_size = host_interface->sectors_per_page - (unsigned int)(internal_lsa % host_interface->sectors_per_page);
 			if (handled_sectors_count + transaction_size >= req_size) {
 				transaction_size = req_size - handled_sectors_count;
 			}
@@ -214,19 +222,19 @@ namespace SSD_Components
 				{
 					case SATA_READ_OPCODE:
 						new_request->Type = UserRequestType::READ;
-						new_request->Start_LBA = ((LHA_type)sqe->Command_specific[1]) << 31 | (LHA_type)sqe->Command_specific[0];//Command Dword 10 and Command Dword 11
+						new_request->Start_LBA = Get_NVMe_LBA(*sqe);//Command Dword 10 and Command Dword 11
 						new_request->SizeInSectors = sqe->Command_specific[2] & (LHA_type)(0x0000ffff);
 						new_request->Size_in_byte = new_request->SizeInSectors * SECTOR_SIZE_IN_BYTE;
 						break;
 					case SATA_WRITE_OPCODE:
 						new_request->Type = UserRequestType::WRITE;
-						new_request->Start_LBA = ((LHA_type)sqe->Command_specific[1]) << 31 | (LHA_type)sqe->Command_specific[0];//Command Dword 10 and Command Dword 11
+						new_request->Start_LBA = Get_NVMe_LBA(*sqe);//Command Dword 10 and Command Dword 11
 						new_request->SizeInSectors = sqe->Command_specific[2] & (LHA_type)(0x0000ffff);
 						new_request->Size_in_byte = new_request->SizeInSectors * SECTOR_SIZE_IN_BYTE;
 						break;
 					case SATA_DATASET_MANAGEMENT_OPCODE:
 						new_request->Type = UserRequestType::TRIM;
-						new_request->Start_LBA = ((LHA_type)sqe->Command_specific[1]) << 31 | (LHA_type)sqe->Command_specific[0];
+						new_request->Start_LBA = Get_NVMe_LBA(*sqe);
 						new_request->SizeInSectors = sqe->Command_specific[2] & (LHA_type)(0x0000ffff);
 						new_request->Size_in_byte = 0;
 						break;
@@ -267,7 +275,7 @@ namespace SSD_Components
 		dma_list.push_back(dma_req_item);
 
 		Submission_Queue_Entry* sqe = (Submission_Queue_Entry*)request->IO_command_info;
-		host_interface->Send_read_message_to_host((sqe->PRP_entry_2 << 31) | sqe->PRP_entry_1, request->Size_in_byte);
+		host_interface->Send_read_message_to_host(sqe->PRP_entry_1, request->Size_in_byte);
 	}
 
 	void Request_Fetch_Unit_SATA::Send_completion_queue_element(User_Request* request, uint16_t sq_head_value)

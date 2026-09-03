@@ -9,7 +9,8 @@
 #include "../utils/Logical_Address_Partitioning_Unit.h"
 
 Host_System::Host_System(Host_Parameter_Set* parameters, bool preconditioning_required, SSD_Components::Host_Interface_Base* ssd_host_interface):
-	MQSimEngine::Sim_Object("Host"), preconditioning_required(preconditioning_required)
+		MQSimEngine::Sim_Object("Host"), preconditioning_required(preconditioning_required),
+		dependency_manager(new Host_Components::Request_Dependency_Manager())
 {
 	Simulator->AddObject(this);
 
@@ -27,6 +28,9 @@ Host_System::Host_System(Host_Parameter_Set* parameters, bool preconditioning_re
 	Simulator->AddObject(this->Link);
 
 	//Create IO flows
+	if (ssd_host_interface->GetType() == HostInterface_Types::NVME && parameters->IO_Flow_Definitions.size() > 8) {
+		PRINT_ERROR("NVMe scenarios support at most 8 I/O flows")
+	}
 	LHA_type address_range_per_flow = ssd_host_interface->Get_max_logical_sector_address() / parameters->IO_Flow_Definitions.size();
 	for (uint16_t flow_id = 0; flow_id < parameters->IO_Flow_Definitions.size(); flow_id++) {
 		Host_Components::IO_Flow_Base* io_flow = NULL;
@@ -68,6 +72,7 @@ Host_System::Host_System(Host_Parameter_Set* parameters, bool preconditioning_re
 					FLOW_ID_TO_Q_ID(flow_id), nvme_sq_size, nvme_cq_size,
 					flow_param->Priority_Class, flow_param->Initial_Occupancy_Percentage / double(100.0),
 					flow_param->File_Path, flow_param->Time_Unit, flow_param->Relay_Count, flow_param->Percentage_To_Be_Executed,
+					flow_param->Format, dependency_manager, flow_param->Enable_Request_Completion_Log,
 					ssd_host_interface->GetType(), this->PCIe_root_complex, this->SATA_hba,
 					parameters->Enable_ResponseTime_Logging, parameters->ResponseTime_Logging_Period_Length, parameters->Input_file_path + ".IO_Flow.No_" + std::to_string(flow_id) + ".log");
 
@@ -77,8 +82,10 @@ Host_System::Host_System(Host_Parameter_Set* parameters, bool preconditioning_re
 			default:
 				throw "The specified IO flow type is not supported.\n";
 		}
+		io_flow->Set_pool_id(parameters->IO_Flow_Definitions[flow_id]->Pool_ID);
 		Simulator->AddObject(io_flow);
 	}
+	dependency_manager->Finalize();
 	this->PCIe_root_complex->Set_io_flows(&this->IO_flows);
 	if (((SSD_Components::Host_Interface_NVMe*)ssd_host_interface)->GetType() == HostInterface_Types::SATA) {
 		this->SATA_hba->Set_io_flows(&this->IO_flows);
@@ -97,11 +104,26 @@ Host_System::~Host_System()
 	for (uint16_t flow_id = 0; flow_id < this->IO_flows.size(); flow_id++) {
 		delete this->IO_flows[flow_id];
 	}
+	delete dependency_manager;
+}
+
+void Host_System::Validate_simulation_drained()
+{
+	dependency_manager->Validate_drained();
+	for (auto* flow : IO_flows) {
+		if (flow->Get_generated_request_count() != flow->Get_serviced_request_count()) {
+			PRINT_ERROR("Simulation ended before all requests completed in " << flow->ID())
+		}
+	}
 }
 
 void Host_System::Attach_ssd_device(SSD_Device* ssd_device)
 {
 	ssd_device->Attach_to_host(this->PCIe_switch);
+	ssd_device->Attach_host_flows(&IO_flows);
+	for (auto* flow : IO_flows) {
+		flow->Set_measurement_window(ssd_device->Get_measurement_start_time(), ssd_device->Get_measurement_end_time());
+	}
 	this->PCIe_switch->Attach_ssd_device(ssd_device->Host_interface);
 	this->ssd_device = ssd_device;
 }
@@ -186,4 +208,3 @@ std::vector<Utils::Workload_Statistics*> Host_System::get_workloads_statistics()
 
 	return stats;
 }
-

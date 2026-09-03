@@ -208,9 +208,11 @@ namespace SSD_Components
 		if (CMT == NULL) {
 			//Each flow (address mapping domain) has its own CMT, so CMT is create here in the constructor
 			this->CMT = new Cached_Mapping_Table(cmt_capacity);
+			Owns_CMT = true;
 		} else {
 			//The entire CMT space is shared among concurrently running flows (i.e., address mapping domains of all flow)
 			this->CMT = CMT;
+			Owns_CMT = false;
 		}
 
 		Total_translation_pages_no = MVPN_type(Total_logical_pages_no / Translation_entries_per_page);
@@ -223,7 +225,7 @@ namespace SSD_Components
 
 	AddressMappingDomain::~AddressMappingDomain()
 	{
-		delete CMT;
+		if (Owns_CMT) delete CMT;
 		delete[] GlobalMappingTable;
 		delete[] GlobalTranslationDirectory;
 
@@ -299,7 +301,8 @@ namespace SSD_Components
 		double Overprovisioning_ratio, CMT_Sharing_Mode sharing_mode, bool fold_large_addresses)
 		: Address_Mapping_Unit_Base(id, ftl, flash_controller, block_manager, ideal_mapping_table,
 			concurrent_stream_no, channel_count, chip_no_per_channel, die_no_per_chip, plane_no_per_die,
-			Block_no_per_plane, Page_no_per_block, SectorsPerPage, PageSizeInByte, Overprovisioning_ratio, sharing_mode, fold_large_addresses)
+			Block_no_per_plane, Page_no_per_block, SectorsPerPage, PageSizeInByte, Overprovisioning_ratio, sharing_mode, fold_large_addresses),
+		shared_cmt(NULL)
 	{
 		_my_instance = this;
 		domains = new AddressMappingDomain*[no_of_input_streams];
@@ -319,28 +322,19 @@ namespace SSD_Components
 		flash_channel_ID_type* chip_ids = NULL;
 		flash_channel_ID_type* die_ids = NULL;
 		flash_channel_ID_type* plane_ids = NULL;
-		for (unsigned int domainID = 0; domainID < no_of_input_streams; domainID++) {
-			/* Since we want to have the same mapping table entry size for all streams, the entry size
-			*  is calculated at this level and then pass it to the constructors of mapping domains
-			* entry size = sizeOf(lpa) + sizeOf(ppn) + sizeOf(bit vector that shows written sectors of a page)
-			*/
-			CMT_entry_size = (unsigned int)std::ceil(((2 * std::log2(total_physical_pages_no)) + sector_no_per_page) / 8);
-			//In GTD we do not need to store lpa
-			GTD_entry_size = (unsigned int)std::ceil((std::log2(total_physical_pages_no) + sector_no_per_page) / 8);
-			no_of_translation_entries_per_page = (SectorsPerPage * SECTOR_SIZE_IN_BYTE) / GTD_entry_size;
+		/* entry size = lpa + ppn + sector validity bitmap. */
+		CMT_entry_size = (unsigned int)std::ceil(((2 * std::log2(total_physical_pages_no)) + sector_no_per_page) / 8);
+		GTD_entry_size = (unsigned int)std::ceil((std::log2(total_physical_pages_no) + sector_no_per_page) / 8);
+		no_of_translation_entries_per_page = (SectorsPerPage * SECTOR_SIZE_IN_BYTE) / GTD_entry_size;
+		cmt_capacity = cmt_capacity_in_byte / CMT_entry_size;
+		unsigned int per_stream_cmt_capacity = cmt_capacity;
+		if (sharing_mode == CMT_Sharing_Mode::SHARED) {
+			shared_cmt = new Cached_Mapping_Table(cmt_capacity);
+		} else {
+			per_stream_cmt_capacity = cmt_capacity / no_of_input_streams;
+		}
 
-			Cached_Mapping_Table* sharedCMT = NULL;
-			unsigned int per_stream_cmt_capacity = 0;
-			cmt_capacity = cmt_capacity_in_byte / CMT_entry_size;
-			switch (sharing_mode) {
-				case CMT_Sharing_Mode::SHARED:
-					per_stream_cmt_capacity = cmt_capacity;
-					sharedCMT = new Cached_Mapping_Table(cmt_capacity);
-					break;
-				case CMT_Sharing_Mode::EQUAL_SIZE_PARTITIONING:
-					per_stream_cmt_capacity = cmt_capacity / no_of_input_streams;
-					break;
-			}
+		for (unsigned int domainID = 0; domainID < no_of_input_streams; domainID++) {
 
 
 			channel_ids = new flash_channel_ID_type[stream_channel_ids[domainID].size()];
@@ -380,7 +374,7 @@ namespace SSD_Components
 			}
 
 			domains[domainID] = new AddressMappingDomain(per_stream_cmt_capacity, CMT_entry_size, no_of_translation_entries_per_page,
-				sharedCMT,
+				shared_cmt,
 				PlaneAllocationScheme,
 				channel_ids, (unsigned int)(stream_channel_ids[domainID].size()), chip_ids, (unsigned int)(stream_chip_ids[domainID].size()), die_ids, 
 				(unsigned int)(stream_die_ids[domainID].size()), plane_ids, (unsigned int)(stream_plane_ids[domainID].size()),
@@ -399,6 +393,7 @@ namespace SSD_Components
 			delete domains[i];
 		}
 		delete[] domains;
+		delete shared_cmt;
 	}
 
 	void Address_Mapping_Unit_Page_Level::Setup_triggers()
@@ -420,24 +415,26 @@ namespace SSD_Components
 	{
 	}
 
+	bool Address_Mapping_Unit_Page_Level::Is_drained() const
+	{
+		for (unsigned int stream = 0; stream < no_of_input_streams; ++stream) {
+			const AddressMappingDomain* domain = domains[stream];
+			if (!domain->Waiting_unmapped_read_transactions.empty() || !domain->Waiting_unmapped_program_transactions.empty() ||
+				!domain->ArrivingMappingEntries.empty() || !domain->DepartingMappingEntries.empty() ||
+				!domain->Locked_LPAs.empty() || !domain->Locked_MVPNs.empty() ||
+				!domain->Read_transactions_behind_LPA_barrier.empty() || !domain->Write_transactions_behind_LPA_barrier.empty() ||
+				!domain->MVPN_read_transactions_waiting_behind_barrier.empty() || !domain->MVPN_write_transaction_waiting_behind_barrier.empty()) return false;
+		}
+		for (unsigned int channel = 0; channel < channel_count; ++channel)
+			for (unsigned int chip = 0; chip < chip_no_per_channel; ++chip)
+				for (unsigned int die = 0; die < die_no_per_chip; ++die)
+					for (unsigned int plane = 0; plane < plane_no_per_die; ++plane)
+						if (!Write_transactions_for_overfull_planes[channel][chip][die][plane].empty()) return false;
+		return true;
+	}
+
 	void Address_Mapping_Unit_Page_Level::Store_mapping_table_on_flash_at_start()
 	{
-		if (mapping_table_stored_on_flash) {
-			return;
-		}
-		//Since address translation functions work on flash transactions
-		NVM_Transaction_Flash_WR* dummy_tr = new NVM_Transaction_Flash_WR(Transaction_Source_Type::MAPPING, 0, 0,
-			NO_LPA, 0, NULL, 0, NULL, 0, 0);
-
-		for (unsigned int stream_id = 0; stream_id < no_of_input_streams; stream_id++) {
-			dummy_tr->Stream_id = stream_id;
-			for (MVPN_type translation_page_id = 0; translation_page_id < domains[stream_id]->Total_translation_pages_no; translation_page_id++) {
-				dummy_tr->LPA = (LPA_type)translation_page_id;
-				allocate_plane_for_translation_write(dummy_tr);
-				allocate_page_in_plane_for_translation_write(dummy_tr, (MVPN_type)dummy_tr->LPA, false);
-				flash_controller->Change_flash_page_status_for_preconditioning(dummy_tr->Address, dummy_tr->LPA);
-			}
-		}
 		mapping_table_stored_on_flash = true;
 	}
 
@@ -494,7 +491,15 @@ namespace SSD_Components
 			for (std::list<NVM_Transaction*>::const_iterator it = transactionList.begin();
 				it != transactionList.end(); it++) {
 				if (((NVM_Transaction_Flash*)(*it))->Physical_address_determined) {
-					ftl->TSU->Submit_transaction(static_cast<NVM_Transaction_Flash*>(*it));
+					NVM_Transaction_Flash* flash_transaction = static_cast<NVM_Transaction_Flash*>(*it);
+					if (flash_transaction->Source == Transaction_Source_Type::USERIO && flash_transaction->UserIORequest != NULL) {
+						if (flash_transaction->Type == Transaction_Type::READ && flash_transaction->UserIORequest->Type == UserRequestType::READ) {
+							Stats::Channel_host_read_bytes[flash_transaction->Address.ChannelID] += flash_transaction->Data_and_metadata_size_in_byte;
+						} else if (flash_transaction->Type == Transaction_Type::WRITE && flash_transaction->UserIORequest->Type == UserRequestType::WRITE) {
+							Stats::Channel_host_write_bytes[flash_transaction->Address.ChannelID] += flash_transaction->Data_and_metadata_size_in_byte;
+						}
+					}
+					ftl->TSU->Submit_transaction(flash_transaction);
 					if (((NVM_Transaction_Flash*)(*it))->Type == Transaction_Type::WRITE) {
 						if (((NVM_Transaction_Flash_WR*)(*it))->RelatedRead != NULL) {
 							ftl->TSU->Submit_transaction(((NVM_Transaction_Flash_WR*)(*it))->RelatedRead);
@@ -512,11 +517,6 @@ namespace SSD_Components
 		if (stream_id >= no_of_input_streams || lpa >= domains[stream_id]->Total_logical_pages_no) {
 			PRINT_ERROR("TRIM address is outside the logical address range allocated to the stream.")
 		}
-		if (is_lpa_locked_for_gc(stream_id, lpa)) {
-			domains[stream_id]->Trim_operations_behind_LPA_barrier.insert(std::make_pair(lpa, Pending_Trim_Operation(sector_bitmap, user_request)));
-			return;
-		}
-
 		execute_trim(stream_id, lpa, sector_bitmap);
 		ftl->Trim_operation_completed(user_request);
 	}
@@ -532,14 +532,24 @@ namespace SSD_Components
 		if (ppa == NO_PPA || trimmed_sectors == UNWRITTEN_LOGICAL_PAGE) {
 			return;
 		}
+		NVM::FlashMemory::Physical_Page_Address trim_address;
+		Convert_ppa_to_address(ppa, trim_address);
+		Stats::Channel_requested_trim_sectors[trim_address.ChannelID] += count_sector_no_from_status_bitmap(sector_bitmap);
+		Stats::Channel_effective_trimmed_sectors[trim_address.ChannelID] += count_sector_no_from_status_bitmap(trimmed_sectors);
 
 		page_status_type remaining_sectors = page_status & ~sector_bitmap;
 		if (remaining_sectors == UNWRITTEN_LOGICAL_PAGE) {
 			NVM::FlashMemory::Physical_Page_Address address;
 			Convert_ppa_to_address(ppa, address);
-			block_manager->Invalidate_page_in_block(stream_id, address);
+			PlaneBookKeepingType* plane = block_manager->Get_plane_bookkeeping_entry(address);
+			Block_Pool_Slot_Type* block = &plane->Blocks[address.BlockID];
+				if (block->Stream_id == stream_id && block_manager->Is_page_valid(block, address.PageID) &&
+					flash_controller->Get_metadata(address.ChannelID, address.ChipID, address.DieID, address.PlaneID, address.BlockID, address.PageID) == lpa) {
+					block_manager->Invalidate_page_in_block(stream_id, address);
+					Stats::Total_pages_invalidated_by_trim++;
+					Stats::Total_pages_invalidated_by_trim_per_stream[stream_id]++;
+				}
 			ppa = NO_PPA;
-			Stats::Total_pages_invalidated_by_trim++;
 		}
 
 		if (mapping_entry_accessible) {
@@ -549,7 +559,9 @@ namespace SSD_Components
 			domain->GlobalMappingTable[lpa].WrittenStateBitmap = remaining_sectors;
 			domain->GlobalMappingTable[lpa].TimeStamp = CurrentTimeStamp;
 		}
-		Stats::Total_trimmed_sectors += count_sector_no_from_status_bitmap(trimmed_sectors);
+		const unsigned int effective_sector_count = count_sector_no_from_status_bitmap(trimmed_sectors);
+		Stats::Total_trimmed_sectors += effective_sector_count;
+		Stats::Total_trimmed_sectors_per_stream[stream_id] += effective_sector_count;
 	}
 
 	bool Address_Mapping_Unit_Page_Level::query_cmt(NVM_Transaction_Flash* transaction)
@@ -1816,22 +1828,32 @@ namespace SSD_Components
 		Block_Pool_Slot_Type* block = &(block_manager->plane_manager[block_address.ChannelID][block_address.ChipID][block_address.DieID][block_address.PlaneID].Blocks[block_address.BlockID]);
 		NVM::FlashMemory::Physical_Page_Address addr(block_address);
 		for (flash_page_ID_type pageID = 0; pageID < block->Current_page_write_index; pageID++) {
-			if (block_manager->Is_page_valid(block, pageID)) {
-				addr.PageID = pageID;
-				if (block->Holds_mapping_data) {
-					MVPN_type mpvn = (MVPN_type)flash_controller->Get_metadata(addr.ChannelID, addr.ChipID, addr.DieID, addr.PlaneID, addr.BlockID, addr.PageID);
-					if (domains[block->Stream_id]->GlobalTranslationDirectory[mpvn].MPPN != Convert_address_to_ppa(addr)) {
-						PRINT_ERROR("Inconsistency in the global translation directory when locking an MPVN!")
+				if (block_manager->Is_page_valid(block, pageID)) {
+					addr.PageID = pageID;
+					if (block->Holds_mapping_data) {
+						MVPN_type mpvn = (MVPN_type)flash_controller->Get_metadata(addr.ChannelID, addr.ChipID, addr.DieID, addr.PlaneID, addr.BlockID, addr.PageID);
+						if (mpvn == NO_LPA || mpvn >= domains[block->Stream_id]->Total_translation_pages_no) {
+							block_manager->Invalidate_page_in_block(block->Stream_id, addr);
+							continue;
+						}
+						if (domains[block->Stream_id]->GlobalTranslationDirectory[mpvn].MPPN != Convert_address_to_ppa(addr)) {
+							block_manager->Invalidate_page_in_block(block->Stream_id, addr);
+							continue;
 					}
                     Set_barrier_for_accessing_mvpn(block->Stream_id, mpvn);
-				} else {
-					LPA_type lpa = flash_controller->Get_metadata(addr.ChannelID, addr.ChipID, addr.DieID, addr.PlaneID, addr.BlockID, addr.PageID);
-					LPA_type ppa = domains[block->Stream_id]->GlobalMappingTable[lpa].PPA;
+					} else {
+						LPA_type lpa = flash_controller->Get_metadata(addr.ChannelID, addr.ChipID, addr.DieID, addr.PlaneID, addr.BlockID, addr.PageID);
+						if (lpa == NO_LPA || lpa >= domains[block->Stream_id]->Total_logical_pages_no) {
+							block_manager->Invalidate_page_in_block(block->Stream_id, addr);
+							continue;
+						}
+						LPA_type ppa = domains[block->Stream_id]->GlobalMappingTable[lpa].PPA;
 					if (domains[block->Stream_id]->CMT->Exists(block->Stream_id, lpa)) {
 						ppa = domains[block->Stream_id]->CMT->Retrieve_ppa(block->Stream_id, lpa);
 					}
-					if (ppa != Convert_address_to_ppa(addr)) {
-						PRINT_ERROR("Inconsistency in the global mapping table when locking an LPA!")
+						if (ppa != Convert_address_to_ppa(addr)) {
+							block_manager->Invalidate_page_in_block(block->Stream_id, addr);
+							continue;
 					}
 					Set_barrier_for_accessing_lpa(block->Stream_id, lpa);
 				}
@@ -1863,16 +1885,6 @@ namespace SSD_Components
 			delete (*write_tr).second;
 			domains[stream_id]->Write_transactions_behind_LPA_barrier.erase(write_tr);
 			write_tr = domains[stream_id]->Write_transactions_behind_LPA_barrier.find(lpa);
-		}
-
-		//A TRIM that arrived while GC was relocating this LPA must observe the relocated mapping.
-		auto trim_operation = domains[stream_id]->Trim_operations_behind_LPA_barrier.find(lpa);
-		while (trim_operation != domains[stream_id]->Trim_operations_behind_LPA_barrier.end()) {
-			Pending_Trim_Operation operation = trim_operation->second;
-			domains[stream_id]->Trim_operations_behind_LPA_barrier.erase(trim_operation);
-			execute_trim(stream_id, lpa, operation.Sector_bitmap);
-			ftl->Trim_operation_completed(operation.Request);
-			trim_operation = domains[stream_id]->Trim_operations_behind_LPA_barrier.find(lpa);
 		}
 	}
 

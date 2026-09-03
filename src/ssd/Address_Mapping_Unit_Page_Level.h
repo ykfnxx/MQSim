@@ -41,14 +41,6 @@ namespace SSD_Components
 		data_timestamp_type TimeStamp;
 	};
 
-	struct Pending_Trim_Operation
-	{
-		page_status_type Sector_bitmap;
-		User_Request* Request;
-
-		Pending_Trim_Operation(page_status_type sector_bitmap, User_Request* request) : Sector_bitmap(sector_bitmap), Request(request) {}
-	};
-	
 	class Cached_Mapping_Table
 	{
 	public:
@@ -98,6 +90,7 @@ namespace SSD_Components
 		unsigned int CMT_entry_size;
 		unsigned int Translation_entries_per_page;
 		Cached_Mapping_Table* CMT;
+		bool Owns_CMT;
 		unsigned int No_of_inserted_entries_in_preconditioning;
 
 		/*The logical to physical address mapping of all data pages that is implemented based on the DFTL (Gupta et al., ASPLOS 2009(
@@ -117,7 +110,6 @@ namespace SSD_Components
 		std::set<MVPN_type> Locked_MVPNs;//Used to manage race conditions
 		std::multimap<LPA_type, NVM_Transaction_Flash*> Read_transactions_behind_LPA_barrier;
 		std::multimap<LPA_type, NVM_Transaction_Flash*> Write_transactions_behind_LPA_barrier;
-		std::multimap<LPA_type, Pending_Trim_Operation> Trim_operations_behind_LPA_barrier;
 		std::set<MVPN_type> MVPN_read_transactions_waiting_behind_barrier;
 		std::set<MVPN_type> MVPN_write_transaction_waiting_behind_barrier;
 
@@ -164,6 +156,7 @@ namespace SSD_Components
 		void Get_data_mapping_info_for_gc(const stream_id_type stream_id, const LPA_type lpa, PPA_type& ppa, page_status_type& page_state);
 		void Get_translation_mapping_info_for_gc(const stream_id_type stream_id, const MVPN_type mvpn, MPPN_type& mppa, sim_time_type& timestamp);
 		void Allocate_new_page_for_gc(NVM_Transaction_Flash_WR* transaction, bool is_translation_page);
+		bool Is_drained() const;
 
 		void Store_mapping_table_on_flash_at_start();
 		LPA_type Get_logical_pages_count(stream_id_type stream_id);
@@ -180,6 +173,7 @@ namespace SSD_Components
 	private:
 		static Address_Mapping_Unit_Page_Level* _my_instance;
 		unsigned int cmt_capacity;
+		Cached_Mapping_Table* shared_cmt;
 		AddressMappingDomain** domains;
 		unsigned int CMT_entry_size, GTD_entry_size;//In CMT MQSim stores (lpn, ppn, page status bits) but in GTD it only stores (ppn, page status bits)
 		void allocate_plane_for_user_write(NVM_Transaction_Flash_WR* transaction);

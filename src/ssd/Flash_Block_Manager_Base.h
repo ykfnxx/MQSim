@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <queue>
 #include <set>
+#include <vector>
 #include "../nvm_chip/flash_memory/FlashTypes.h"
 #include "../nvm_chip/flash_memory/Physical_Page_Address.h"
 #include "GC_and_WL_Unit_Base.h"
@@ -33,7 +34,9 @@ namespace SSD_Components
 		flash_page_ID_type Current_page_write_index;
 		Block_Service_Status Current_status;
 		unsigned int Invalid_page_count;
-		unsigned int Erase_count;
+			unsigned int Erase_count;
+			unsigned int Measurement_erase_count;
+			sim_time_type Last_write_time;
 		static unsigned int Page_vector_size;
 		uint64_t* Invalid_page_bitmap;//A bit sequence that keeps track of valid/invalid status of pages in the block. A "0" means valid, and a "1" means invalid.
 		stream_id_type Stream_id = NO_STREAM;
@@ -71,9 +74,11 @@ namespace SSD_Components
 		friend class GC_and_WL_Unit_Page_Level;
 		friend class GC_and_WL_Unit_Base;
 	public:
-		Flash_Block_Manager_Base(GC_and_WL_Unit_Base* gc_and_wl_unit, unsigned int max_allowed_block_erase_count, unsigned int total_concurrent_streams_no,
-			unsigned int channel_count, unsigned int chip_no_per_channel, unsigned int die_no_per_chip, unsigned int plane_no_per_die,
-			unsigned int block_no_per_plane, unsigned int page_no_per_block);
+			Flash_Block_Manager_Base(GC_and_WL_Unit_Base* gc_and_wl_unit, unsigned int max_allowed_block_erase_count, unsigned int total_concurrent_streams_no,
+				const std::vector<unsigned int>& channel_pe_cycle_limits,
+				unsigned int channel_count, unsigned int chip_no_per_channel, unsigned int die_no_per_chip, unsigned int plane_no_per_die,
+				unsigned int block_no_per_plane, unsigned int page_no_per_block,
+				sim_time_type measurement_start_time, sim_time_type measurement_end_time);
 		virtual ~Flash_Block_Manager_Base();
 		virtual void Allocate_block_and_page_in_plane_for_user_write(const stream_id_type streamID, NVM::FlashMemory::Physical_Page_Address& address) = 0;
 		virtual void Allocate_block_and_page_in_plane_for_gc_write(const stream_id_type streamID, NVM::FlashMemory::Physical_Page_Address& address) = 0;
@@ -95,18 +100,26 @@ namespace SSD_Components
 		void Read_transaction_serviced(const NVM::FlashMemory::Physical_Page_Address& page_address);//Updates the block bookkeeping record
 		void Program_transaction_serviced(const NVM::FlashMemory::Physical_Page_Address& page_address);//Updates the block bookkeeping record
 		bool Is_having_ongoing_program(const NVM::FlashMemory::Physical_Page_Address& block_address);//Cheks if block has any ongoing program request
-		bool Is_page_valid(Block_Pool_Slot_Type* block, flash_page_ID_type page_id);//Make the page invalid in the block bookkeeping record
+			bool Is_page_valid(Block_Pool_Slot_Type* block, flash_page_ID_type page_id);//Make the page invalid in the block bookkeeping record
+			uint64_t Get_total_erase_count_for_channel(unsigned int channel_id) const;
+			unsigned int Get_max_erase_count_for_channel(unsigned int channel_id) const;
+			uint64_t Get_total_measurement_erase_count_for_channel(unsigned int channel_id) const;
+			unsigned int Get_max_measurement_erase_count_for_channel(unsigned int channel_id) const;
+			bool Is_drained() const;
 	protected:
 		PlaneBookKeepingType ****plane_manager;//Keeps track of plane block usage information
 		GC_and_WL_Unit_Base *gc_and_wl_unit;
 		unsigned int max_allowed_block_erase_count;
+		std::vector<unsigned int> channel_pe_cycle_limits;
 		unsigned int total_concurrent_streams_no;
 		unsigned int channel_count;
 		unsigned int chip_no_per_channel;
 		unsigned int die_no_per_chip;
 		unsigned int plane_no_per_die;
 		unsigned int block_no_per_plane;
-		unsigned int pages_no_per_block;
+			unsigned int pages_no_per_block;
+			sim_time_type measurement_start_time;
+			sim_time_type measurement_end_time;
 		void program_transaction_issued(const NVM::FlashMemory::Physical_Page_Address& page_address);//Updates the block bookkeeping record
 	};
 }

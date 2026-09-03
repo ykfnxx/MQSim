@@ -1,47 +1,156 @@
 #include "Device_Parameter_Set.h"
 #include <algorithm>
+#include <cstring>
+#include <set>
+#include <sstream>
 
 
 
-int Device_Parameter_Set::Seed = 123;//Seed for random number generation (used in device's random number generators)
-bool Device_Parameter_Set::Enabled_Preconditioning = true;
-NVM::NVM_Type Device_Parameter_Set::Memory_Type = NVM::NVM_Type::FLASH;
-HostInterface_Types Device_Parameter_Set::HostInterface_Type = HostInterface_Types::NVME;
-uint16_t Device_Parameter_Set::IO_Queue_Depth = 1024;//For NVMe, it determines the size of the submission/completion queues; for SATA, it determines the size of NCQ_Control_Structure
-uint16_t Device_Parameter_Set::Queue_Fetch_Size = 512;//Used in NVMe host interface
-SSD_Components::Caching_Mechanism Device_Parameter_Set::Caching_Mechanism = SSD_Components::Caching_Mechanism::ADVANCED;
-SSD_Components::Cache_Sharing_Mode Device_Parameter_Set::Data_Cache_Sharing_Mode = SSD_Components::Cache_Sharing_Mode::SHARED;//Data cache sharing among concurrently running I/O flows, if NVMe host interface is used
-unsigned int Device_Parameter_Set::Data_Cache_Capacity = 1024 * 1024 * 512;//Data cache capacity in bytes
-unsigned int Device_Parameter_Set::Data_Cache_DRAM_Row_Size = 8192;//The row size of DRAM in the data cache, the unit is bytes
-unsigned int Device_Parameter_Set::Data_Cache_DRAM_Data_Rate = 800;//Data access rate to access DRAM in the data cache, the unit is MT/s
-unsigned int Device_Parameter_Set::Data_Cache_DRAM_Data_Busrt_Size = 4;//The number of bytes that are transferred in one burst (it depends on the number of DRAM chips)
-sim_time_type Device_Parameter_Set::Data_Cache_DRAM_tRCD = 13;//tRCD parameter to access DRAM in the data cache, the unit is nano-seconds
-sim_time_type Device_Parameter_Set::Data_Cache_DRAM_tCL = 13;//tCL parameter to access DRAM in the data cache, the unit is nano-seconds
-sim_time_type Device_Parameter_Set::Data_Cache_DRAM_tRP = 13;//tRP parameter to access DRAM in the data cache, the unit is nano-seconds
-SSD_Components::Flash_Address_Mapping_Type Device_Parameter_Set::Address_Mapping = SSD_Components::Flash_Address_Mapping_Type::PAGE_LEVEL;
-bool Device_Parameter_Set::Ideal_Mapping_Table = false;//If mapping is ideal, then all the mapping entries are found in the DRAM and there is no need to read mapping entries from flash
-unsigned int Device_Parameter_Set::CMT_Capacity = 2 * 1024 * 1024;//Size of SRAM/DRAM space that is used to cache address mapping table in bytes
-SSD_Components::CMT_Sharing_Mode Device_Parameter_Set::CMT_Sharing_Mode = SSD_Components::CMT_Sharing_Mode::SHARED;//How the entire CMT space is shared among concurrently running flows
-SSD_Components::Flash_Plane_Allocation_Scheme_Type Device_Parameter_Set::Plane_Allocation_Scheme = SSD_Components::Flash_Plane_Allocation_Scheme_Type::CWDP;
-SSD_Components::Flash_Scheduling_Type Device_Parameter_Set::Transaction_Scheduling_Policy = SSD_Components::Flash_Scheduling_Type::OUT_OF_ORDER;
-double Device_Parameter_Set::Overprovisioning_Ratio = 0.07;//The ratio of spare space with respect to the whole available storage space of SSD
-double Device_Parameter_Set::GC_Exec_Threshold = 0.05;//The threshold for the ratio of free pages that used to trigger GC
-SSD_Components::GC_Block_Selection_Policy_Type Device_Parameter_Set::GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::RGA;
-bool Device_Parameter_Set::Use_Copyback_for_GC = false;
-bool Device_Parameter_Set::Preemptible_GC_Enabled = true;
-double Device_Parameter_Set::GC_Hard_Threshold = 0.005;//The hard gc execution threshold, used to stop preemptible gc execution
-bool Device_Parameter_Set::Dynamic_Wearleveling_Enabled = true;
-bool Device_Parameter_Set::Static_Wearleveling_Enabled = true;
-unsigned int Device_Parameter_Set::Static_Wearleveling_Threshold = 100;
-sim_time_type Device_Parameter_Set::Preferred_suspend_erase_time_for_read = 700000;//in nano-seconds
-sim_time_type Device_Parameter_Set::Preferred_suspend_erase_time_for_write = 700000;//in nano-seconds
-sim_time_type Device_Parameter_Set::Preferred_suspend_write_time_for_read = 100000;//in nano-seconds
-unsigned int Device_Parameter_Set::Flash_Channel_Count = 8;
-unsigned int Device_Parameter_Set::Flash_Channel_Width = 1;//Channel width in byte
-unsigned int Device_Parameter_Set::Channel_Transfer_Rate = 300;//MT/s
-unsigned int Device_Parameter_Set::Chip_No_Per_Channel = 4;
-SSD_Components::ONFI_Protocol Device_Parameter_Set::Flash_Comm_Protocol = SSD_Components::ONFI_Protocol::NVDDR2;
-Flash_Parameter_Set Device_Parameter_Set::Flash_Parameters;
+Device_Parameter_Set::Device_Parameter_Set()
+	: Seed(123), Enabled_Preconditioning(true), Memory_Type(NVM::NVM_Type::FLASH),
+	  HostInterface_Type(HostInterface_Types::NVME), IO_Queue_Depth(1024), Queue_Fetch_Size(512),
+	  Caching_Mechanism(SSD_Components::Caching_Mechanism::ADVANCED),
+	  Data_Cache_Sharing_Mode(SSD_Components::Cache_Sharing_Mode::SHARED),
+	  Data_Cache_Capacity(1024 * 1024 * 512), Data_Cache_DRAM_Row_Size(8192),
+	  Data_Cache_DRAM_Data_Rate(800), Data_Cache_DRAM_Data_Busrt_Size(4),
+	  Data_Cache_DRAM_tRCD(13), Data_Cache_DRAM_tCL(13), Data_Cache_DRAM_tRP(13),
+	  Address_Mapping(SSD_Components::Flash_Address_Mapping_Type::PAGE_LEVEL), Ideal_Mapping_Table(false),
+	  CMT_Capacity(2 * 1024 * 1024), CMT_Sharing_Mode(SSD_Components::CMT_Sharing_Mode::SHARED),
+	  Plane_Allocation_Scheme(SSD_Components::Flash_Plane_Allocation_Scheme_Type::CWDP),
+	  Transaction_Scheduling_Policy(SSD_Components::Flash_Scheduling_Type::OUT_OF_ORDER),
+	  Overprovisioning_Ratio(0.07), GC_Exec_Threshold(0.05),
+	  GC_Block_Selection_Policy(SSD_Components::GC_Block_Selection_Policy_Type::RGA),
+	  Use_Copyback_for_GC(false), Preemptible_GC_Enabled(true), GC_Hard_Threshold(0.005),
+	  Dynamic_Wearleveling_Enabled(true), Static_Wearleveling_Enabled(true), Static_Wearleveling_Threshold(100),
+	  Preferred_suspend_erase_time_for_read(700000), Preferred_suspend_erase_time_for_write(700000),
+	  Preferred_suspend_write_time_for_read(100000), Flash_Channel_Count(8), Flash_Channel_Width(1),
+	  Channel_Transfer_Rate(300), Chip_No_Per_Channel(4),
+	  Flash_Comm_Protocol(SSD_Components::ONFI_Protocol::NVDDR2)
+{
+}
+Flash_Media_Profile::Flash_Media_Profile()
+	: Flash_Technology(Flash_Technology_Type::SLC),
+	  CMD_Suspension_Support(NVM::FlashMemory::Command_Suspension_Mode::NONE),
+	  Page_Read_Latency_LSB(75000), Page_Read_Latency_CSB(75000), Page_Read_Latency_MSB(75000),
+	  Page_Program_Latency_LSB(750000), Page_Program_Latency_CSB(750000), Page_Program_Latency_MSB(750000),
+	  Block_Erase_Latency(3800000), Block_PE_Cycles_Limit(10000),
+	  Suspend_Erase_Time(700000), Suspend_Program_Time(100000)
+{
+}
+
+Flash_Pool_Parameter_Set::Flash_Pool_Parameter_Set() : Logical_Capacity_In_Sectors(0)
+{
+}
+
+static Flash_Technology_Type parse_flash_technology(const std::string& text)
+{
+	std::string value(text);
+	std::transform(value.begin(), value.end(), value.begin(), ::toupper);
+	if (value == "SLC") return Flash_Technology_Type::SLC;
+	if (value == "MLC") return Flash_Technology_Type::MLC;
+	if (value == "TLC") return Flash_Technology_Type::TLC;
+	PRINT_ERROR("Unknown flash technology: " << text)
+}
+
+static NVM::FlashMemory::Command_Suspension_Mode parse_suspension_mode(const std::string& text)
+{
+	std::string value(text);
+	std::transform(value.begin(), value.end(), value.begin(), ::toupper);
+	if (value == "NONE") return NVM::FlashMemory::Command_Suspension_Mode::NONE;
+	if (value == "PROGRAM") return NVM::FlashMemory::Command_Suspension_Mode::PROGRAM;
+	if (value == "ERASE") return NVM::FlashMemory::Command_Suspension_Mode::ERASE;
+	if (value == "PROGRAM_ERASE") return NVM::FlashMemory::Command_Suspension_Mode::PROGRAM_ERASE;
+	PRINT_ERROR("Unknown command suspension mode: " << text)
+}
+
+void Flash_Media_Profile::XML_deserialize(rapidxml::xml_node<>* node)
+{
+	for (auto param = node->first_node(); param; param = param->next_sibling()) {
+		const std::string name(param->name());
+		const std::string value(param->value());
+		if (name == "Media_Profile_ID") Media_Profile_ID = value;
+		else if (name == "Flash_Technology") Flash_Technology = parse_flash_technology(value);
+		else if (name == "CMD_Suspension_Support") CMD_Suspension_Support = parse_suspension_mode(value);
+		else if (name == "Page_Read_Latency_LSB") Page_Read_Latency_LSB = std::stoull(value);
+		else if (name == "Page_Read_Latency_CSB") Page_Read_Latency_CSB = std::stoull(value);
+		else if (name == "Page_Read_Latency_MSB") Page_Read_Latency_MSB = std::stoull(value);
+		else if (name == "Page_Program_Latency_LSB") Page_Program_Latency_LSB = std::stoull(value);
+		else if (name == "Page_Program_Latency_CSB") Page_Program_Latency_CSB = std::stoull(value);
+		else if (name == "Page_Program_Latency_MSB") Page_Program_Latency_MSB = std::stoull(value);
+		else if (name == "Block_Erase_Latency") Block_Erase_Latency = std::stoull(value);
+		else if (name == "Block_PE_Cycles_Limit") Block_PE_Cycles_Limit = std::stoul(value);
+		else if (name == "Suspend_Erase_Time") Suspend_Erase_Time = std::stoull(value);
+		else if (name == "Suspend_Program_Time") Suspend_Program_Time = std::stoull(value);
+	}
+}
+
+void Flash_Media_Profile::XML_serialize(Utils::XmlWriter& xmlwriter) const
+{
+	xmlwriter.Write_open_tag("Flash_Media_Profile");
+	xmlwriter.Write_attribute_string("Media_Profile_ID", Media_Profile_ID);
+	std::string technology = Flash_Technology == Flash_Technology_Type::SLC ? "SLC" :
+		(Flash_Technology == Flash_Technology_Type::MLC ? "MLC" : "TLC");
+	xmlwriter.Write_attribute_string("Flash_Technology", technology);
+	std::string suspension = "NONE";
+	if (CMD_Suspension_Support == NVM::FlashMemory::Command_Suspension_Mode::PROGRAM) suspension = "PROGRAM";
+	else if (CMD_Suspension_Support == NVM::FlashMemory::Command_Suspension_Mode::ERASE) suspension = "ERASE";
+	else if (CMD_Suspension_Support == NVM::FlashMemory::Command_Suspension_Mode::PROGRAM_ERASE) suspension = "PROGRAM_ERASE";
+	xmlwriter.Write_attribute_string("CMD_Suspension_Support", suspension);
+	xmlwriter.Write_attribute_string("Page_Read_Latency_LSB", std::to_string(Page_Read_Latency_LSB));
+	xmlwriter.Write_attribute_string("Page_Read_Latency_CSB", std::to_string(Page_Read_Latency_CSB));
+	xmlwriter.Write_attribute_string("Page_Read_Latency_MSB", std::to_string(Page_Read_Latency_MSB));
+	xmlwriter.Write_attribute_string("Page_Program_Latency_LSB", std::to_string(Page_Program_Latency_LSB));
+	xmlwriter.Write_attribute_string("Page_Program_Latency_CSB", std::to_string(Page_Program_Latency_CSB));
+	xmlwriter.Write_attribute_string("Page_Program_Latency_MSB", std::to_string(Page_Program_Latency_MSB));
+	xmlwriter.Write_attribute_string("Block_Erase_Latency", std::to_string(Block_Erase_Latency));
+	xmlwriter.Write_attribute_string("Block_PE_Cycles_Limit", std::to_string(Block_PE_Cycles_Limit));
+	xmlwriter.Write_attribute_string("Suspend_Erase_Time", std::to_string(Suspend_Erase_Time));
+	xmlwriter.Write_attribute_string("Suspend_Program_Time", std::to_string(Suspend_Program_Time));
+	xmlwriter.Write_close_tag();
+}
+
+void Flash_Pool_Parameter_Set::XML_deserialize(rapidxml::xml_node<>* node)
+{
+	for (auto param = node->first_node(); param; param = param->next_sibling()) {
+		const std::string name(param->name());
+		const std::string value(param->value());
+		if (name == "Pool_ID") Pool_ID = value;
+		else if (name == "Logical_Capacity_In_Sectors") Logical_Capacity_In_Sectors = std::stoull(value);
+		else if (name == "Media_Profile_ID") Media_Profile_ID = value;
+		else if (name == "Channel_IDs") {
+			std::stringstream input(value);
+			std::string item;
+			while (std::getline(input, item, ',')) Channel_IDs.push_back(static_cast<flash_channel_ID_type>(std::stoul(item)));
+		}
+	}
+}
+
+void Flash_Pool_Parameter_Set::XML_serialize(Utils::XmlWriter& xmlwriter) const
+{
+	xmlwriter.Write_open_tag("Flash_Pool_Parameter_Set");
+	xmlwriter.Write_attribute_string("Pool_ID", Pool_ID);
+	std::string channels;
+	for (size_t index = 0; index < Channel_IDs.size(); ++index) {
+		if (index != 0) channels += ",";
+		channels += std::to_string(Channel_IDs[index]);
+	}
+	xmlwriter.Write_attribute_string("Channel_IDs", channels);
+	xmlwriter.Write_attribute_string("Logical_Capacity_In_Sectors", std::to_string(Logical_Capacity_In_Sectors));
+	xmlwriter.Write_attribute_string("Media_Profile_ID", Media_Profile_ID);
+	xmlwriter.Write_close_tag();
+}
+
+const Flash_Media_Profile& Device_Parameter_Set::Find_media_profile(const std::string& id) const
+{
+	for (const auto& profile : Flash_Media_Profiles) if (profile.Media_Profile_ID == id) return profile;
+	PRINT_ERROR("Unknown flash media profile: " << id)
+}
+
+const Flash_Pool_Parameter_Set& Device_Parameter_Set::Find_pool(const std::string& id) const
+{
+	for (const auto& pool : Flash_Pools) if (pool.Pool_ID == id) return pool;
+	PRINT_ERROR("Unknown flash pool: " << id)
+}
 
 void Device_Parameter_Set::XML_serialize(Utils::XmlWriter& xmlwriter)
 {
@@ -287,6 +396,9 @@ void Device_Parameter_Set::XML_serialize(Utils::XmlWriter& xmlwriter)
 		case SSD_Components::GC_Block_Selection_Policy_Type::GREEDY:
 			val = "GREEDY";
 			break;
+		case SSD_Components::GC_Block_Selection_Policy_Type::KV_THREE_GREEDY:
+			val = "KV_THREE_GREEDY";
+			break;
 		case SSD_Components::GC_Block_Selection_Policy_Type::RGA:
 			val = "RGA";
 			break;
@@ -370,6 +482,10 @@ void Device_Parameter_Set::XML_serialize(Utils::XmlWriter& xmlwriter)
 	xmlwriter.Write_attribute_string(attr, val);
 
 	Flash_Parameters.XML_serialize(xmlwriter);
+	for (const auto& profile : Flash_Media_Profiles) profile.XML_serialize(xmlwriter);
+	for (const auto& pool : Flash_Pools) pool.XML_serialize(xmlwriter);
+	xmlwriter.Write_attribute_string("Measurement_Start_Time_Ns", std::to_string(Measurement_Start_Time_Ns));
+	xmlwriter.Write_attribute_string("Measurement_End_Time_Ns", std::to_string(Measurement_End_Time_Ns));
 
 	xmlwriter.Write_close_tag();
 }
@@ -561,6 +677,8 @@ void Device_Parameter_Set::XML_deserialize(rapidxml::xml_node<> *node)
 				std::transform(val.begin(), val.end(), val.begin(), ::toupper);
 				if (strcmp(val.c_str(), "GREEDY") == 0) {
 					GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::GREEDY;
+				} else if (strcmp(val.c_str(), "KV_THREE_GREEDY") == 0) {
+					GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::KV_THREE_GREEDY;
 				} else if (strcmp(val.c_str(), "RGA") == 0) {
 					GC_Block_Selection_Policy = SSD_Components::GC_Block_Selection_Policy_Type::RGA;
 				} else if (strcmp(val.c_str(), "RANDOM") == 0) {
@@ -629,6 +747,18 @@ void Device_Parameter_Set::XML_deserialize(rapidxml::xml_node<> *node)
 			else if (strcmp(param->name(), "Flash_Parameter_Set") == 0)
 			{
 				Flash_Parameters.XML_deserialize(param);
+			} else if (strcmp(param->name(), "Flash_Media_Profile") == 0) {
+				Flash_Media_Profile profile;
+				profile.XML_deserialize(param);
+				Flash_Media_Profiles.push_back(profile);
+			} else if (strcmp(param->name(), "Flash_Pool_Parameter_Set") == 0) {
+				Flash_Pool_Parameter_Set pool;
+				pool.XML_deserialize(param);
+				Flash_Pools.push_back(pool);
+			} else if (strcmp(param->name(), "Measurement_Start_Time_Ns") == 0) {
+				Measurement_Start_Time_Ns = std::stoull(param->value());
+			} else if (strcmp(param->name(), "Measurement_End_Time_Ns") == 0) {
+				Measurement_End_Time_Ns = std::stoull(param->value());
 			}
 		}
 	}

@@ -184,6 +184,17 @@ namespace SSD_Components
 		}
 	}
 
+	bool Data_Cache_Manager_Flash_Advanced::Is_drained() const
+	{
+		if (memory_channel_is_busy) return false;
+		const unsigned int queue_count = shared_dram_request_queue ? 1 : stream_count;
+		for (unsigned int queue = 0; queue < queue_count; ++queue) {
+			if (!dram_execution_queue[queue].empty() || !waiting_user_requests_queue_for_dram_free_slot[queue].empty() ||
+				back_pressure_buffer_depth[queue] != 0) return false;
+		}
+		return true;
+	}
+
 	void Data_Cache_Manager_Flash_Advanced::process_new_user_request(User_Request* user_request)
 	{
 		if (user_request->Type == UserRequestType::TRIM) {

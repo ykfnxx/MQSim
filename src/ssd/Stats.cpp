@@ -31,7 +31,16 @@ namespace SSD_Components
 
 	unsigned int Stats::Total_gc_executions = 0, Stats::Total_gc_executions_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
 	unsigned int Stats::Total_page_movements_for_gc = 0, Stats::Total_gc_page_movements_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
+	unsigned long long Stats::Total_gc_page_reads = 0, Stats::Total_gc_page_programs = 0;
+	unsigned long long Stats::Total_gc_page_reads_per_stream[MAX_SUPPORT_STREAMS] = { 0 }, Stats::Total_gc_page_programs_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
+	unsigned long long Stats::Total_received_trim_commands = 0, Stats::Total_requested_trim_sectors = 0;
 	unsigned long long Stats::Total_trimmed_sectors = 0, Stats::Total_pages_invalidated_by_trim = 0;
+	unsigned long long Stats::Total_received_trim_commands_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
+	unsigned long long Stats::Total_requested_trim_sectors_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
+	unsigned long long Stats::Total_trimmed_sectors_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
+	unsigned long long Stats::Total_pages_invalidated_by_trim_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
+	std::vector<unsigned long long> Stats::Channel_host_read_bytes, Stats::Channel_host_write_bytes;
+	std::vector<unsigned long long> Stats::Channel_requested_trim_sectors, Stats::Channel_effective_trimmed_sectors;
 
 	unsigned int Stats::Total_wl_executions = 0, Stats::Total_wl_executions_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
 	unsigned int Stats::Total_page_movements_for_wl = 0, Stats::Total_wl_page_movements_per_stream[MAX_SUPPORT_STREAMS] = { 0 };
@@ -44,6 +53,10 @@ namespace SSD_Components
 	void Stats::Init_stats(unsigned int channel_no, unsigned int chip_no_per_channel, unsigned int die_no_per_chip, unsigned int plane_no_per_die, 
 		unsigned int block_no_per_plane, unsigned int page_no_per_block, unsigned int max_allowed_block_erase_count)
 	{
+		Channel_host_read_bytes.assign(channel_no, 0);
+		Channel_host_write_bytes.assign(channel_no, 0);
+		Channel_requested_trim_sectors.assign(channel_no, 0);
+		Channel_effective_trimmed_sectors.assign(channel_no, 0);
 		Block_erase_histogram = new unsigned int ****[channel_no];
 		for (unsigned int channel_cntr = 0; channel_cntr < channel_no; channel_cntr++) {
 			Block_erase_histogram[channel_cntr] = new unsigned int***[chip_no_per_channel];
@@ -52,9 +65,9 @@ namespace SSD_Components
 				for (unsigned int die_cntr = 0; die_cntr < die_no_per_chip; die_cntr++) {
 					Block_erase_histogram[channel_cntr][chip_cntr][die_cntr] = new unsigned int*[plane_no_per_die];
 					for (unsigned int plane_cntr = 0; plane_cntr < plane_no_per_die; plane_cntr++) {
-						Block_erase_histogram[channel_cntr][chip_cntr][die_cntr][plane_cntr] = new unsigned int[max_allowed_block_erase_count];
-						Block_erase_histogram[channel_cntr][chip_cntr][die_cntr][plane_cntr][0] = block_no_per_plane * page_no_per_block; //At the start of the simulation all pages have zero erase count
-						for (unsigned int i = 1; i < max_allowed_block_erase_count; ++i) {
+						Block_erase_histogram[channel_cntr][chip_cntr][die_cntr][plane_cntr] = new unsigned int[max_allowed_block_erase_count + 1];
+						Block_erase_histogram[channel_cntr][chip_cntr][die_cntr][plane_cntr][0] = block_no_per_plane;
+						for (unsigned int i = 1; i <= max_allowed_block_erase_count; ++i) {
 							Block_erase_histogram[channel_cntr][chip_cntr][die_cntr][plane_cntr][i] = 0;
 						}
 					}
@@ -71,7 +84,9 @@ namespace SSD_Components
 		CMT_miss = 0; readTR_CMT_miss = 0; writeTR_CMT_miss = 0;
 		total_CMT_queries = 0; total_readTR_CMT_queries = 0; total_writeTR_CMT_queries = 0;
 
-		Total_gc_executions = 0;  Total_page_movements_for_gc = 0;
+		Total_gc_executions = 0; Total_page_movements_for_gc = 0;
+		Total_gc_page_reads = 0; Total_gc_page_programs = 0;
+		Total_received_trim_commands = 0; Total_requested_trim_sectors = 0;
 		Total_trimmed_sectors = 0; Total_pages_invalidated_by_trim = 0;
 		Total_wl_executions = 0;  Total_page_movements_for_wl = 0;
 
@@ -83,6 +98,12 @@ namespace SSD_Components
 			total_CMT_queries_per_stream[stream_id] = 0; total_readTR_CMT_queries_per_stream[stream_id] = 0; total_writeTR_CMT_queries_per_stream[stream_id] = 0;
 			Total_gc_executions_per_stream[stream_id] = 0;
 			Total_gc_page_movements_per_stream[stream_id] = 0;
+			Total_gc_page_reads_per_stream[stream_id] = 0;
+			Total_gc_page_programs_per_stream[stream_id] = 0;
+			Total_received_trim_commands_per_stream[stream_id] = 0;
+			Total_requested_trim_sectors_per_stream[stream_id] = 0;
+			Total_trimmed_sectors_per_stream[stream_id] = 0;
+			Total_pages_invalidated_by_trim_per_stream[stream_id] = 0;
 			Total_wl_executions_per_stream[stream_id] = 0;
 			Total_wl_page_movements_per_stream[stream_id] = 0;
 		}

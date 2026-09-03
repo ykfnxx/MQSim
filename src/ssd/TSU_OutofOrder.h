@@ -31,11 +31,12 @@ public:
 				   sim_time_type WriteReasonableSuspensionTimeForRead,
 				   sim_time_type EraseReasonableSuspensionTimeForRead,
 				   sim_time_type EraseReasonableSuspensionTimeForWrite,
-				   bool EraseSuspensionEnabled,
-				   bool ProgramSuspensionEnabled);
+				   const std::vector<bool>& EraseSuspensionEnabled,
+				   const std::vector<bool>& ProgramSuspensionEnabled);
 	~TSU_OutOfOrder();
 
 	void Schedule();
+	bool Is_drained() const;
 
 	void Start_simulation();
 	void Validate_simulation_config();

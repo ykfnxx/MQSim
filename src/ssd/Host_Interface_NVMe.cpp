@@ -18,6 +18,17 @@ Input_Stream_Manager_NVMe::Input_Stream_Manager_NVMe(Host_Interface_Base *host_i
 {
 }
 
+bool Input_Stream_Manager_NVMe::Is_drained() const
+{
+	for (const auto* base_stream : input_streams) {
+		const Input_Stream_NVMe* stream = static_cast<const Input_Stream_NVMe*>(base_stream);
+		if (!stream->Waiting_user_requests.empty() || !stream->Completed_user_requests.empty() ||
+			!stream->Waiting_write_data_transfers.empty() || stream->On_the_fly_requests != 0 ||
+			stream->Submission_head != stream->Submission_tail || stream->Completion_head != stream->Completion_tail) return false;
+	}
+	return true;
+}
+
 stream_id_type Input_Stream_Manager_NVMe::Create_new_stream(IO_Flow_Priority_Class::Priority priority_class,
 															LHA_type start_logical_sector_address,
 															LHA_type end_logical_sector_address,
@@ -191,7 +202,7 @@ void Input_Stream_Manager_NVMe::segment_user_request(User_Request *user_request)
 		}
 		LHA_type internal_lsa = lsa - ((Input_Stream_NVMe *)input_streams[user_request->Stream_id])->Start_logical_sector_address; //For each flow, all lsa's should be translated into a range starting from zero
 
-		transaction_size = host_interface->sectors_per_page - (unsigned int)(lsa % host_interface->sectors_per_page);
+		transaction_size = host_interface->sectors_per_page - (unsigned int)(internal_lsa % host_interface->sectors_per_page);
 		if (handled_sectors_count + transaction_size >= req_size)
 		{
 			transaction_size = req_size - handled_sectors_count;
@@ -306,19 +317,19 @@ void Request_Fetch_Unit_NVMe::Process_pcie_read_message(uint64_t address, void *
 		{
 		case NVME_READ_OPCODE:
 			new_request->Type = UserRequestType::READ;
-			new_request->Start_LBA = ((LHA_type)sqe->Command_specific[1]) << 31 | (LHA_type)sqe->Command_specific[0]; //Command Dword 10 and Command Dword 11
+			new_request->Start_LBA = Get_NVMe_LBA(*sqe); //Command Dword 10 and Command Dword 11
 			new_request->SizeInSectors = sqe->Command_specific[2] & (LHA_type)(0x0000ffff);
 			new_request->Size_in_byte = new_request->SizeInSectors * SECTOR_SIZE_IN_BYTE;
 			break;
 		case NVME_WRITE_OPCODE:
 			new_request->Type = UserRequestType::WRITE;
-			new_request->Start_LBA = ((LHA_type)sqe->Command_specific[1]) << 31 | (LHA_type)sqe->Command_specific[0]; //Command Dword 10 and Command Dword 11
+			new_request->Start_LBA = Get_NVMe_LBA(*sqe); //Command Dword 10 and Command Dword 11
 			new_request->SizeInSectors = sqe->Command_specific[2] & (LHA_type)(0x0000ffff);
 			new_request->Size_in_byte = new_request->SizeInSectors * SECTOR_SIZE_IN_BYTE;
 			break;
 		case NVME_DATASET_MANAGEMENT_OPCODE:
 			new_request->Type = UserRequestType::TRIM;
-			new_request->Start_LBA = ((LHA_type)sqe->Command_specific[1]) << 31 | (LHA_type)sqe->Command_specific[0];
+			new_request->Start_LBA = Get_NVMe_LBA(*sqe);
 			new_request->SizeInSectors = sqe->Command_specific[2] & (LHA_type)(0x0000ffff);
 			new_request->Size_in_byte = 0;
 			break;
@@ -358,7 +369,7 @@ void Request_Fetch_Unit_NVMe::Fetch_write_data(User_Request *request)
 	dma_list.push_back(dma_req_item);
 
 	Submission_Queue_Entry *sqe = (Submission_Queue_Entry *)request->IO_command_info;
-	host_interface->Send_read_message_to_host((sqe->PRP_entry_2 << 31) | sqe->PRP_entry_1, request->Size_in_byte);
+	host_interface->Send_read_message_to_host(sqe->PRP_entry_1, request->Size_in_byte);
 }
 
 void Request_Fetch_Unit_NVMe::Send_completion_queue_element(User_Request *request, uint16_t sq_head_value)

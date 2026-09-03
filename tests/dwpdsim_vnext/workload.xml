@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<MQSim_IO_Scenarios>
+	<IO_Scenario>
+		<IO_Flow_Parameter_Set_Trace_Based>
+			<Priority_Class>HIGH</Priority_Class>
+			<Device_Level_Data_Caching_Mode>TURNED_OFF</Device_Level_Data_Caching_Mode>
+			<Pool_ID>slc</Pool_ID>
+			<Initial_Occupancy_Percentage>0</Initial_Occupancy_Percentage>
+			<File_Path>tests/dwpdsim_vnext/slc.trace</File_Path>
+			<Percentage_To_Be_Executed>100</Percentage_To_Be_Executed>
+			<Relay_Count>1</Relay_Count>
+			<Time_Unit>NANOSECOND</Time_Unit>
+			<Trace_Format>DWPDSIM_DEPENDENCY_V1</Trace_Format>
+			<Enable_Request_Completion_Log>true</Enable_Request_Completion_Log>
+		</IO_Flow_Parameter_Set_Trace_Based>
+		<IO_Flow_Parameter_Set_Trace_Based>
+			<Priority_Class>HIGH</Priority_Class>
+			<Device_Level_Data_Caching_Mode>TURNED_OFF</Device_Level_Data_Caching_Mode>
+			<Pool_ID>slc</Pool_ID>
+			<Initial_Occupancy_Percentage>0</Initial_Occupancy_Percentage>
+			<File_Path>tests/dwpdsim_vnext/empty.trace</File_Path>
+			<Percentage_To_Be_Executed>100</Percentage_To_Be_Executed>
+			<Relay_Count>1</Relay_Count>
+			<Time_Unit>NANOSECOND</Time_Unit>
+			<Trace_Format>DWPDSIM_DEPENDENCY_V1</Trace_Format>
+			<Enable_Request_Completion_Log>true</Enable_Request_Completion_Log>
+		</IO_Flow_Parameter_Set_Trace_Based>
+		<IO_Flow_Parameter_Set_Trace_Based>
+			<Priority_Class>HIGH</Priority_Class>
+			<Device_Level_Data_Caching_Mode>TURNED_OFF</Device_Level_Data_Caching_Mode>
+			<Pool_ID>tlc</Pool_ID>
+			<Initial_Occupancy_Percentage>0</Initial_Occupancy_Percentage>
+			<File_Path>tests/dwpdsim_vnext/tlc.trace</File_Path>
+			<Percentage_To_Be_Executed>100</Percentage_To_Be_Executed>
+			<Relay_Count>1</Relay_Count>
+			<Time_Unit>NANOSECOND</Time_Unit>
+			<Trace_Format>DWPDSIM_DEPENDENCY_V1</Trace_Format>
+			<Enable_Request_Completion_Log>true</Enable_Request_Completion_Log>
+		</IO_Flow_Parameter_Set_Trace_Based>
+	</IO_Scenario>
+</MQSim_IO_Scenarios>

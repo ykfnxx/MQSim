@@ -1,6 +1,7 @@
 #include "IO_Flow_Base.h"
 #include "../ssd/Host_Interface_Defs.h"
 #include "../sim/Engine.h"
+#include "Request_Dependency_Manager.h"
 
 namespace Host_Components
 {
@@ -14,13 +15,15 @@ IO_Flow_Base::IO_Flow_Base(const sim_object_id_type &name, uint16_t flow_id, LHA
 																							STAT_generated_request_count(0), STAT_generated_read_request_count(0), STAT_generated_write_request_count(0), STAT_generated_trim_request_count(0),
 																												STAT_ignored_request_count(0),
 																							STAT_serviced_request_count(0), STAT_serviced_read_request_count(0), STAT_serviced_write_request_count(0), STAT_serviced_trim_request_count(0),
-																												STAT_sum_device_response_time(0), STAT_sum_device_response_time_read(0), STAT_sum_device_response_time_write(0),
-																												STAT_min_device_response_time(MAXIMUM_TIME), STAT_min_device_response_time_read(MAXIMUM_TIME), STAT_min_device_response_time_write(MAXIMUM_TIME),
-																												STAT_max_device_response_time(0), STAT_max_device_response_time_read(0), STAT_max_device_response_time_write(0),
-																												STAT_sum_request_delay(0), STAT_sum_request_delay_read(0), STAT_sum_request_delay_write(0),
-																												STAT_min_request_delay(MAXIMUM_TIME), STAT_min_request_delay_read(MAXIMUM_TIME), STAT_min_request_delay_write(MAXIMUM_TIME),
-																												STAT_max_request_delay(0), STAT_max_request_delay_read(0), STAT_max_request_delay_write(0),
-																							STAT_transferred_bytes_total(0), STAT_transferred_bytes_read(0), STAT_transferred_bytes_write(0), STAT_trimmed_bytes(0), progress(0), next_progress_step(0),
+																																				STAT_sum_device_response_time(0), STAT_sum_device_response_time_read(0), STAT_sum_device_response_time_write(0), STAT_sum_device_response_time_trim(0),
+																																				STAT_min_device_response_time(MAXIMUM_TIME), STAT_min_device_response_time_read(MAXIMUM_TIME), STAT_min_device_response_time_write(MAXIMUM_TIME), STAT_min_device_response_time_trim(MAXIMUM_TIME),
+																																				STAT_max_device_response_time(0), STAT_max_device_response_time_read(0), STAT_max_device_response_time_write(0), STAT_max_device_response_time_trim(0),
+																																				STAT_sum_request_delay(0), STAT_sum_request_delay_read(0), STAT_sum_request_delay_write(0), STAT_sum_request_delay_trim(0),
+																																				STAT_min_request_delay(MAXIMUM_TIME), STAT_min_request_delay_read(MAXIMUM_TIME), STAT_min_request_delay_write(MAXIMUM_TIME), STAT_min_request_delay_trim(MAXIMUM_TIME),
+																																				STAT_max_request_delay(0), STAT_max_request_delay_read(0), STAT_max_request_delay_write(0), STAT_max_request_delay_trim(0),
+																											STAT_transferred_bytes_total(0), STAT_transferred_bytes_read(0), STAT_transferred_bytes_write(0), STAT_trimmed_bytes(0),
+																											STAT_measurement_write_bytes(0), measurement_start_time(0), measurement_end_time(MAXIMUM_TIME),
+																																				STAT_dependency_wait_time_total(0), STAT_dependency_wait_time_max(0), dependency_manager(NULL), progress(0), next_progress_step(0),
 																												enabled_logging(enabled_logging), logging_period(logging_period), logging_file_path(logging_file_path)
 {
 	Host_IO_Request *t = NULL;
@@ -206,11 +209,21 @@ IO_Flow_Base::IO_Flow_Base(const sim_object_id_type &name, uint16_t flow_id, LHA
 			}
 			STAT_transferred_bytes_total += request->LBA_count * SECTOR_SIZE_IN_BYTE;
 			STAT_transferred_bytes_write += request->LBA_count * SECTOR_SIZE_IN_BYTE;
+			if (Simulator->Time() >= measurement_start_time && Simulator->Time() < measurement_end_time) {
+				STAT_measurement_write_bytes += request->LBA_count * SECTOR_SIZE_IN_BYTE;
+			}
 		} else {
 			STAT_serviced_trim_request_count++;
 			STAT_trimmed_bytes += request->LBA_count * SECTOR_SIZE_IN_BYTE;
+			STAT_sum_device_response_time_trim += device_response_time;
+			STAT_sum_request_delay_trim += request_delay;
+			if (device_response_time < STAT_min_device_response_time_trim) STAT_min_device_response_time_trim = device_response_time;
+			if (device_response_time > STAT_max_device_response_time_trim) STAT_max_device_response_time_trim = device_response_time;
+			if (request_delay < STAT_min_request_delay_trim) STAT_min_request_delay_trim = request_delay;
+			if (request_delay > STAT_max_request_delay_trim) STAT_max_request_delay_trim = request_delay;
 		}
 
+		if (request->Has_external_request_id && dependency_manager != NULL) dependency_manager->Complete(request);
 		delete request;
 
 		//Announce simulation progress
@@ -310,11 +323,21 @@ IO_Flow_Base::IO_Flow_Base(const sim_object_id_type &name, uint16_t flow_id, LHA
 			}
 			STAT_transferred_bytes_total += request->LBA_count * SECTOR_SIZE_IN_BYTE;
 			STAT_transferred_bytes_write += request->LBA_count * SECTOR_SIZE_IN_BYTE;
+			if (Simulator->Time() >= measurement_start_time && Simulator->Time() < measurement_end_time) {
+				STAT_measurement_write_bytes += request->LBA_count * SECTOR_SIZE_IN_BYTE;
+			}
 		} else {
 			STAT_serviced_trim_request_count++;
 			STAT_trimmed_bytes += request->LBA_count * SECTOR_SIZE_IN_BYTE;
+			STAT_sum_device_response_time_trim += device_response_time;
+			STAT_sum_request_delay_trim += request_delay;
+			if (device_response_time < STAT_min_device_response_time_trim) STAT_min_device_response_time_trim = device_response_time;
+			if (device_response_time > STAT_max_device_response_time_trim) STAT_max_device_response_time_trim = device_response_time;
+			if (request_delay < STAT_min_request_delay_trim) STAT_min_request_delay_trim = request_delay;
+			if (request_delay > STAT_max_request_delay_trim) STAT_max_request_delay_trim = request_delay;
 		}
 
+		if (request->Has_external_request_id && dependency_manager != NULL) dependency_manager->Complete(request);
 		delete request;
 
 		nvme_queue_pair.Submission_queue_head = cqe->SQ_Head;
@@ -396,8 +419,7 @@ IO_Flow_Base::IO_Flow_Base(const sim_object_id_type &name, uint16_t flow_id, LHA
 		} else {
 			sqe->Opcode = NVME_DATASET_MANAGEMENT_OPCODE;
 		}
-		sqe->Command_specific[0] = (uint32_t)request->Start_LBA;
-		sqe->Command_specific[1] = (uint32_t)(request->Start_LBA >> 32);
+		Set_NVMe_LBA(*sqe, request->Start_LBA);
 		sqe->Command_specific[2] = ((uint32_t)((uint16_t)request->LBA_count)) & (uint32_t)(0x0000ffff);
 		if (request->Type != Host_IO_Request_Type::TRIM) {
 			sqe->PRP_entry_1 = (DATA_MEMORY_REGION);//Dummy addresses, just to emulate data read/write access
@@ -433,6 +455,12 @@ IO_Flow_Base::IO_Flow_Base(const sim_object_id_type &name, uint16_t flow_id, LHA
 				sata_hba->Submit_io_request(request);
 				break;
 		}
+	}
+
+	void IO_Flow_Base::Record_dependency_wait(sim_time_type wait_time)
+	{
+		STAT_dependency_wait_time_total += wait_time;
+		if (wait_time > STAT_dependency_wait_time_max) STAT_dependency_wait_time_max = wait_time;
 	}
 
 	void IO_Flow_Base::NVMe_update_and_submit_completion_queue_tail()
@@ -480,6 +508,7 @@ IO_Flow_Base::IO_Flow_Base(const sim_object_id_type &name, uint16_t flow_id, LHA
 
 	uint32_t IO_Flow_Base::Get_min_device_response_time()
 	{
+		if (STAT_serviced_request_count == 0) return 0;
 		return (uint32_t)(STAT_min_device_response_time / SIM_TIME_TO_MICROSECONDS_COEFF);
 	}
 
@@ -499,6 +528,7 @@ IO_Flow_Base::IO_Flow_Base(const sim_object_id_type &name, uint16_t flow_id, LHA
 
 	uint32_t IO_Flow_Base::Get_min_end_to_end_request_delay()
 	{
+		if (STAT_serviced_request_count == 0) return 0;
 		return (uint32_t)(STAT_min_request_delay / SIM_TIME_TO_MICROSECONDS_COEFF);
 	}
 
@@ -535,8 +565,20 @@ IO_Flow_Base::IO_Flow_Base(const sim_object_id_type &name, uint16_t flow_id, LHA
 		std::string val = ID();
 		xmlwriter.Write_attribute_string(attr, val);
 
+		xmlwriter.Write_attribute_string("Flow_ID", std::to_string(flow_id));
+		xmlwriter.Write_attribute_string("Pool_ID", pool_id);
+		xmlwriter.Write_attribute_string("Time_Unit", "nanosecond");
+
 		attr = "Request_Count";
 		val = std::to_string(STAT_generated_request_count);
+		xmlwriter.Write_attribute_string(attr, val);
+
+		attr = "Generated_Request_Count";
+		val = std::to_string(STAT_generated_request_count);
+		xmlwriter.Write_attribute_string(attr, val);
+
+		attr = "Completed_Request_Count";
+		val = std::to_string(STAT_serviced_request_count);
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "Read_Request_Count";
@@ -552,47 +594,90 @@ IO_Flow_Base::IO_Flow_Base(const sim_object_id_type &name, uint16_t flow_id, LHA
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "IOPS";
-		val = std::to_string((double)STAT_generated_request_count / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
+		val = std::to_string(Simulator->Time() == 0 ? 0.0 : (double)STAT_generated_request_count / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "IOPS_Read";
-		val = std::to_string((double)STAT_generated_read_request_count / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
+		val = std::to_string(Simulator->Time() == 0 ? 0.0 : (double)STAT_generated_read_request_count / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "IOPS_Write";
-		val = std::to_string((double)STAT_generated_write_request_count / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
+		val = std::to_string(Simulator->Time() == 0 ? 0.0 : (double)STAT_generated_write_request_count / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "IOPS_Trim";
-		val = std::to_string((double)STAT_generated_trim_request_count / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
+		val = std::to_string(Simulator->Time() == 0 ? 0.0 : (double)STAT_generated_trim_request_count / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "Bytes_Transferred";
-		val = std::to_string((double)STAT_transferred_bytes_total);
+		val = std::to_string(STAT_transferred_bytes_total);
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "Bytes_Transferred_Read";
-		val = std::to_string((double)STAT_transferred_bytes_read);
+		val = std::to_string(STAT_transferred_bytes_read);
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "Bytes_Transferred_Write";
-		val = std::to_string((double)STAT_transferred_bytes_write);
+		val = std::to_string(STAT_transferred_bytes_write);
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "Bytes_Trimmed";
-		val = std::to_string((double)STAT_trimmed_bytes);
+		val = std::to_string(STAT_trimmed_bytes);
+		xmlwriter.Write_attribute_string(attr, val);
+
+		attr = "Bytes_Trimmed_Requested";
+		val = std::to_string(STAT_trimmed_bytes);
+		xmlwriter.Write_attribute_string(attr, val);
+
+		xmlwriter.Write_attribute_string("Measurement_Host_Write_Bytes", std::to_string(STAT_measurement_write_bytes));
+
+		attr = "Average_Response_Time_Read";
+		val = std::to_string(STAT_serviced_read_request_count == 0 ? 0 : STAT_sum_request_delay_read / STAT_serviced_read_request_count);
+		xmlwriter.Write_attribute_string(attr, val);
+		attr = "Min_Response_Time_Read";
+		val = std::to_string(STAT_serviced_read_request_count == 0 ? 0 : STAT_min_request_delay_read);
+		xmlwriter.Write_attribute_string(attr, val);
+		attr = "Max_Response_Time_Read";
+		val = std::to_string(STAT_max_request_delay_read);
+		xmlwriter.Write_attribute_string(attr, val);
+
+		attr = "Average_Response_Time_Write";
+		val = std::to_string(STAT_serviced_write_request_count == 0 ? 0 : STAT_sum_request_delay_write / STAT_serviced_write_request_count);
+		xmlwriter.Write_attribute_string(attr, val);
+		attr = "Min_Response_Time_Write";
+		val = std::to_string(STAT_serviced_write_request_count == 0 ? 0 : STAT_min_request_delay_write);
+		xmlwriter.Write_attribute_string(attr, val);
+		attr = "Max_Response_Time_Write";
+		val = std::to_string(STAT_max_request_delay_write);
+		xmlwriter.Write_attribute_string(attr, val);
+
+		attr = "Average_Response_Time_Trim";
+		val = std::to_string(STAT_serviced_trim_request_count == 0 ? 0 : STAT_sum_request_delay_trim / STAT_serviced_trim_request_count);
+		xmlwriter.Write_attribute_string(attr, val);
+		attr = "Min_Response_Time_Trim";
+		val = std::to_string(STAT_serviced_trim_request_count == 0 ? 0 : STAT_min_request_delay_trim);
+		xmlwriter.Write_attribute_string(attr, val);
+		attr = "Max_Response_Time_Trim";
+		val = std::to_string(STAT_max_request_delay_trim);
+		xmlwriter.Write_attribute_string(attr, val);
+
+		attr = "Dependency_Wait_Time_Total";
+		val = std::to_string(STAT_dependency_wait_time_total);
+		xmlwriter.Write_attribute_string(attr, val);
+		attr = "Dependency_Wait_Time_Max";
+		val = std::to_string(STAT_dependency_wait_time_max);
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "Bandwidth";
-		val = std::to_string((double)STAT_transferred_bytes_total / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
+		val = std::to_string(Simulator->Time() == 0 ? 0.0 : (double)STAT_transferred_bytes_total / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "Bandwidth_Read";
-		val = std::to_string((double)STAT_transferred_bytes_read / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
+		val = std::to_string(Simulator->Time() == 0 ? 0.0 : (double)STAT_transferred_bytes_read / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
 		xmlwriter.Write_attribute_string(attr, val);
 
 		attr = "Bandwidth_Write";
-		val = std::to_string((double)STAT_transferred_bytes_write / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
+		val = std::to_string(Simulator->Time() == 0 ? 0.0 : (double)STAT_transferred_bytes_write / ((double)Simulator->Time() / SIM_TIME_TO_SECONDS_COEFF));
 		xmlwriter.Write_attribute_string(attr, val);
 
 

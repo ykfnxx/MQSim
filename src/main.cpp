@@ -12,6 +12,16 @@
 
 using namespace std;
 
+static uint64_t fnv1a64(const string& input)
+{
+	uint64_t hash = 14695981039346656037ULL;
+	for (unsigned char byte : input) {
+		hash ^= byte;
+		hash *= 1099511628211ULL;
+	}
+	return hash;
+}
+
 
 void command_line_args(char* argv[], string& input_file_path, string& workload_file_path)
 {
@@ -55,6 +65,7 @@ void read_configuration_parameters(const string ssd_config_file_path, Execution_
 		//Read input workload parameters
 		string line((std::istreambuf_iterator<char>(ssd_config_file)),
 			std::istreambuf_iterator<char>());
+		exec_params->SSD_Device_Configuration.Configuration_Hash = fnv1a64(line);
 		ssd_config_file >> line;
 		if (line.compare("USE_INTERNAL_PARAMS") != 0) {
 			rapidxml::xml_document<> doc;    // character type defaults to char
@@ -63,7 +74,6 @@ void read_configuration_parameters(const string ssd_config_file_path, Execution_
 			doc.parse<0>(temp_string);
 			rapidxml::xml_node<> *mqsim_config = doc.first_node("Execution_Parameter_Set");
 			if (mqsim_config != NULL) {
-				exec_params = new Execution_Parameter_Set;
 				exec_params->XML_deserialize(mqsim_config);
 			} else {
 				PRINT_MESSAGE("Error in the SSD configuration file!")
@@ -294,6 +304,8 @@ int main(int argc, char* argv[])
 		host.Attach_ssd_device(&ssd);
 
 		Simulator->Start_simulation();
+		ssd.Validate_simulation_drained();
+		host.Validate_simulation_drained();
 
 		time_t end_time = time(0);
 		dt = ctime(&end_time);
@@ -305,9 +317,7 @@ int main(int argc, char* argv[])
 		PRINT_MESSAGE("Writing results to output file .......");
 		collect_results(ssd, host, (workload_defs_file_path.substr(0, workload_defs_file_path.find_last_of(".")) + "_scenario_" + std::to_string(cntr) + ".xml").c_str());
 	}
-    cout << "Simulation complete; Press any key to exit." << endl;
-
-	cin.get(); // Disable if you prefer batch runs
+	cout << "Simulation complete." << endl;
 
 	return 0;
 }

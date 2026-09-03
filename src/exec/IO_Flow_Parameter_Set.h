@@ -23,6 +23,7 @@ public:
 	flash_plane_ID_type* Plane_IDs;//Resource partitioning: which plane ids are allocated to this flow
 	unsigned int Initial_Occupancy_Percentage;//Percentage of the logical space that is written when preconditioning is performed
 	int Channel_No, Chip_No, Die_No, Plane_No;
+	std::string Pool_ID;
 	void XML_serialize(Utils::XmlWriter& xmlwrite);
 	void XML_deserialize(rapidxml::xml_node<> *node);
 private:
@@ -62,6 +63,8 @@ public:
 	int Percentage_To_Be_Executed;
 	int Relay_Count; 
 	Trace_Time_Unit Time_Unit;
+	Trace_Format Format = Trace_Format::GENERIC;
+	bool Enable_Request_Completion_Log = false;
 	
 	void XML_serialize(Utils::XmlWriter& xmlwriter);
 	void XML_deserialize(rapidxml::xml_node<> *node);

@@ -23,8 +23,8 @@ expected_flow = {
     "Read_Request_Count": "0",
     "Write_Request_Count": "2",
     "Trim_Request_Count": "4",
-    "Bytes_Transferred": "16384.000000",
-    "Bytes_Trimmed": "24576.000000",
+    "Bytes_Transferred": "16384",
+    "Bytes_Trimmed": "24576",
 }
 for key, expected in expected_flow.items():
     element = flow.find(key)

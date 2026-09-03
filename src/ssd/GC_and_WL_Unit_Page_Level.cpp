@@ -42,7 +42,7 @@ namespace SSD_Components
 
 	void GC_and_WL_Unit_Page_Level::Check_gc_required(const unsigned int free_block_pool_size, const NVM::FlashMemory::Physical_Page_Address& plane_address)
 	{
-		if (free_block_pool_size < block_pool_gc_threshold) {
+		if (free_block_pool_size <= block_pool_gc_threshold) {
 			flash_block_ID_type gc_candidate_block_id = block_manager->Get_coldest_block_id(plane_address);
 			PlaneBookKeepingType* pbke = block_manager->Get_plane_bookkeeping_entry(plane_address);
 
@@ -64,6 +64,27 @@ namespace SSD_Components
 							gc_candidate_block_id = block_id;
 						}
 					}
+					break;
+				}
+				case SSD_Components::GC_Block_Selection_Policy_Type::KV_THREE_GREEDY:
+				{
+					bool found = false;
+					for (flash_block_ID_type block_id = 0; block_id < block_no_per_plane; ++block_id) {
+						Block_Pool_Slot_Type& candidate = pbke->Blocks[block_id];
+						if (candidate.Current_page_write_index != pages_no_per_block || candidate.Invalid_page_count == 0 ||
+							!is_safe_gc_wl_candidate(pbke, block_id)) continue;
+						if (!found) {
+							gc_candidate_block_id = block_id;
+							found = true;
+							continue;
+						}
+						Block_Pool_Slot_Type& best = pbke->Blocks[gc_candidate_block_id];
+						if (candidate.Invalid_page_count > best.Invalid_page_count ||
+							(candidate.Invalid_page_count == best.Invalid_page_count && candidate.Last_write_time < best.Last_write_time) ||
+							(candidate.Invalid_page_count == best.Invalid_page_count && candidate.Last_write_time == best.Last_write_time &&
+							 candidate.Erase_count < best.Erase_count)) gc_candidate_block_id = block_id;
+					}
+					if (!found) return;
 					break;
 				}
 				case SSD_Components::GC_Block_Selection_Policy_Type::RGA:
@@ -147,11 +168,11 @@ namespace SSD_Components
 			//Run the state machine to protect against race condition
 			block_manager->GC_WL_started(gc_candidate_address);
 			pbke->Ongoing_erase_operations.insert(gc_candidate_block_id);
-			address_mapping_unit->Set_barrier_for_accessing_physical_block(gc_candidate_address);//Lock the block, so no user request can intervene while the GC is progressing
-			
 			//If there are ongoing requests targeting the candidate block, the gc execution should be postponed
 			if (block_manager->Can_execute_gc_wl(gc_candidate_address)) {
-				Stats::Total_gc_executions++;
+					address_mapping_unit->Set_barrier_for_accessing_physical_block(gc_candidate_address);
+					Stats::Total_gc_executions++;
+					Stats::Total_gc_executions_per_stream[block->Stream_id]++;
 				tsu->Prepare_for_transaction_submit();
 
 				NVM_Transaction_Flash_ER* gc_erase_tr = new NVM_Transaction_Flash_ER(Transaction_Source_Type::GC_WL, pbke->Blocks[gc_candidate_block_id].Stream_id, gc_candidate_address);
@@ -160,8 +181,9 @@ namespace SSD_Components
 					NVM_Transaction_Flash_RD* gc_read = NULL;
 					NVM_Transaction_Flash_WR* gc_write = NULL;
 					for (flash_page_ID_type pageID = 0; pageID < block->Current_page_write_index; pageID++) {
-						if (block_manager->Is_page_valid(block, pageID)) {
-							Stats::Total_page_movements_for_gc++;
+							if (block_manager->Is_page_valid(block, pageID)) {
+								Stats::Total_page_movements_for_gc++;
+								Stats::Total_gc_page_movements_per_stream[block->Stream_id]++;
 							gc_candidate_address.PageID = pageID;
 							if (use_copyback) {
 								gc_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,

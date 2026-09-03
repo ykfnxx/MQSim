@@ -10,6 +10,7 @@
 #include "../host/PCIe_Message.h"
 #include "../host/IO_Flow_Base.h"
 #include "../host/Host_IO_Request.h"
+#include "../host/Request_Dependency_Manager.h"
 #include "../ssd/Host_Interface_Base.h"
 #include "Host_Parameter_Set.h"
 #include "SSD_Device.h"
@@ -24,6 +25,7 @@ public:
 	void Validate_simulation_config();
 	void Execute_simulator_event(MQSimEngine::Sim_Event* event);
 	void Report_results_in_XML(std::string name_prefix, Utils::XmlWriter& xmlwriter);
+	void Validate_simulation_drained();
 
 	void Attach_ssd_device(SSD_Device* ssd_device);
 	const std::vector<Host_Components::IO_Flow_Base*> Get_io_flows();
@@ -36,6 +38,7 @@ private:
 	SSD_Device* ssd_device;
 	std::vector<Utils::Workload_Statistics*> get_workloads_statistics();
 	bool preconditioning_required;
+	Host_Components::Request_Dependency_Manager* dependency_manager;
 };
 
 #endif // !HOST_SYSTEM_H

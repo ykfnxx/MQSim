@@ -2,6 +2,7 @@
 #define TSU_H
 
 #include <list>
+#include <vector>
 #include "../sim/Sim_Defs.h"
 #include "../sim/Sim_Object.h"
 #include "../nvm_chip/flash_memory/Flash_Chip.h"
@@ -24,10 +25,10 @@ class TSU_Base : public MQSimEngine::Sim_Object
 public:
 	TSU_Base(const sim_object_id_type &id, FTL *ftl, NVM_PHY_ONFI_NVDDR2 *NVMController, Flash_Scheduling_Type Type,
 			 unsigned int Channel_no, unsigned int chip_no_per_channel, unsigned int DieNoPerChip, unsigned int PlaneNoPerDie,
-			 bool EraseSuspensionEnabled, bool ProgramSuspensionEnabled,
 			 sim_time_type WriteReasonableSuspensionTimeForRead,
 			 sim_time_type EraseReasonableSuspensionTimeForRead,
-			 sim_time_type EraseReasonableSuspensionTimeForWrite);
+			 sim_time_type EraseReasonableSuspensionTimeForWrite,
+			 const std::vector<bool>& EraseSuspensionEnabled, const std::vector<bool>& ProgramSuspensionEnabled);
 	virtual ~TSU_Base();
 	void Setup_triggers();
 
@@ -63,6 +64,7 @@ public:
 		* be mixes of reads, writes, and erases.
 		*/
 	virtual void Schedule() = 0;
+	virtual bool Is_drained() const = 0;
 	virtual void Report_results_in_XML(std::string name_prefix, Utils::XmlWriter &xmlwriter);
 
 protected:
@@ -73,7 +75,7 @@ protected:
 	unsigned int chip_no_per_channel;
 	unsigned int die_no_per_chip;
 	unsigned int plane_no_per_die;
-	bool eraseSuspensionEnabled, programSuspensionEnabled;
+	std::vector<bool> eraseSuspensionEnabled, programSuspensionEnabled;
 	sim_time_type writeReasonableSuspensionTimeForRead;
 	sim_time_type eraseReasonableSuspensionTimeForRead; //the time period
 	sim_time_type eraseReasonableSuspensionTimeForWrite;
@@ -90,6 +92,7 @@ protected:
 	static void handle_channel_idle_signal(flash_channel_ID_type);
 	static void handle_chip_idle_signal(NVM::FlashMemory::Flash_Chip *chip);
 	int opened_scheduling_reqs;
+	bool Input_slots_are_drained() const { return opened_scheduling_reqs == 0 && transaction_receive_slots.empty() && transaction_dispatch_slots.empty(); }
 	void process_chip_requests(NVM::FlashMemory::Flash_Chip* chip)
 	{
 		if (!_my_instance->service_read_transaction(chip)) {

@@ -88,6 +88,10 @@ void IO_Flow_Parameter_Set::XML_serialize(Utils::XmlWriter& xmlwriter)
 	attr = "Initial_Occupancy_Percentage";
 	val = std::to_string(Initial_Occupancy_Percentage);
 	xmlwriter.Write_attribute_string(attr, val);
+
+	attr = "Pool_ID";
+	val = Pool_ID;
+	xmlwriter.Write_attribute_string(attr, val);
 }
 
 void IO_Flow_Parameter_Set::XML_deserialize(rapidxml::xml_node<> *node)
@@ -208,10 +212,12 @@ void IO_Flow_Parameter_Set::XML_deserialize(rapidxml::xml_node<> *node)
 				for (auto it = ids.begin(); it != ids.end(); it++) {
 					Plane_IDs[i++] = *it;
 				}
-			} else if (strcmp(param->name(), "Initial_Occupancy_Percentage") == 0) {
-				std::string val = param->value();
-				Initial_Occupancy_Percentage = std::stoul(val);
-			}
+				} else if (strcmp(param->name(), "Initial_Occupancy_Percentage") == 0) {
+					std::string val = param->value();
+					Initial_Occupancy_Percentage = std::stoul(val);
+				} else if (strcmp(param->name(), "Pool_ID") == 0) {
+					Pool_ID = param->value();
+				}
 		}
 	} catch (...) {
 		PRINT_ERROR("Error in IO_Flow_Parameter_Set!")
@@ -434,6 +440,14 @@ void IO_Flow_Parameter_Set_Trace_Based::XML_serialize(Utils::XmlWriter& xmlwrite
 	}
 	xmlwriter.Write_attribute_string(attr, val);
 
+	attr = "Trace_Format";
+	val = Format == Trace_Format::DWPDSIM_DEPENDENCY_V1 ? "DWPDSIM_DEPENDENCY_V1" : "GENERIC";
+	xmlwriter.Write_attribute_string(attr, val);
+
+	attr = "Enable_Request_Completion_Log";
+	val = Enable_Request_Completion_Log ? "true" : "false";
+	xmlwriter.Write_attribute_string(attr, val);
+
 	xmlwriter.Write_close_tag();
 }
 
@@ -451,7 +465,7 @@ void IO_Flow_Parameter_Set_Trace_Based::XML_deserialize(rapidxml::xml_node<> *no
 				Percentage_To_Be_Executed = std::stoi(val);
 			} else if (strcmp(param->name(), "File_Path") == 0) {
 				File_Path = param->value();
-			} else if (strcmp(param->name(), "Time_Unit") == 0) {
+				} else if (strcmp(param->name(), "Time_Unit") == 0) {
 				std::string val = param->value();
 				std::transform(val.begin(), val.end(), val.begin(), ::toupper);
 				if (strcmp(val.c_str(), "PICOSECOND") == 0) {
@@ -460,10 +474,20 @@ void IO_Flow_Parameter_Set_Trace_Based::XML_deserialize(rapidxml::xml_node<> *no
 					Time_Unit = Trace_Time_Unit::NANOSECOND;
 				} else if (strcmp(val.c_str(), "MICROSECOND") == 0) {
 					Time_Unit = Trace_Time_Unit::MICROSECOND;
-				} else {
-					PRINT_ERROR("Wrong time unit specified for the trace based flow")
+					} else {
+						PRINT_ERROR("Wrong time unit specified for the trace based flow")
+					}
+				} else if (strcmp(param->name(), "Trace_Format") == 0) {
+					std::string val = param->value();
+					std::transform(val.begin(), val.end(), val.begin(), ::toupper);
+					if (val == "GENERIC") Format = Trace_Format::GENERIC;
+					else if (val == "DWPDSIM_DEPENDENCY_V1") Format = Trace_Format::DWPDSIM_DEPENDENCY_V1;
+					else PRINT_ERROR("Unknown trace format: " << val)
+				} else if (strcmp(param->name(), "Enable_Request_Completion_Log") == 0) {
+					std::string val = param->value();
+					std::transform(val.begin(), val.end(), val.begin(), ::toupper);
+					Enable_Request_Completion_Log = val == "TRUE";
 				}
-			}
 
 		}
 	} catch (...) {

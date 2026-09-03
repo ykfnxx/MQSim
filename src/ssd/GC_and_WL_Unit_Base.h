@@ -12,8 +12,9 @@
 
 namespace SSD_Components
 {
-	enum class GC_Block_Selection_Policy_Type {
-		GREEDY,
+		enum class GC_Block_Selection_Policy_Type {
+			GREEDY,
+			KV_THREE_GREEDY,
 		RGA,						/*The randomized-greedy algorithm described in: "B. Van Houdt, A Mean Field Model
 									for a Class of Garbage Collection Algorithms in Flash - based Solid State Drives,
 									SIGMETRICS, 2013" and "Stochastic Modeling of Large-Scale Solid-State Storage

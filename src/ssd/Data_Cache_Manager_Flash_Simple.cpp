@@ -50,6 +50,15 @@ namespace SSD_Components
 	{
 	}
 
+	bool Data_Cache_Manager_Flash_Simple::Is_drained() const
+	{
+		if (back_pressure_buffer_depth != 0) return false;
+		for (unsigned int stream = 0; stream < stream_count; ++stream) {
+			if (!dram_execution_queue[stream].empty() || !waiting_user_requests_queue_for_dram_free_slot[stream].empty()) return false;
+		}
+		return true;
+	}
+
 	void Data_Cache_Manager_Flash_Simple::process_new_user_request(User_Request* user_request)
 	{
 		if (user_request->Type == UserRequestType::TRIM) {

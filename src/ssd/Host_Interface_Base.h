@@ -54,6 +54,7 @@ namespace SSD_Components
 		virtual void Handle_new_arrived_request(User_Request* request) = 0;
 		virtual void Handle_arrived_write_data(User_Request* request) = 0;
 		virtual void Handle_serviced_request(User_Request* request) = 0;
+		virtual bool Is_drained() const = 0;
 		void Update_transaction_statistics(NVM_Transaction* transaction);
 		uint32_t Get_average_read_transaction_turnaround_time(stream_id_type stream_id);//in microseconds
 		uint32_t Get_average_read_transaction_execution_time(stream_id_type stream_id);//in microseconds
@@ -79,6 +80,7 @@ namespace SSD_Components
 		virtual void Send_read_data(User_Request* request) = 0;
 		virtual void Process_pcie_write_message(uint64_t, void *, unsigned int) = 0;
 		virtual void Process_pcie_read_message(uint64_t, void *, unsigned int) = 0;
+		bool Is_drained() const { return dma_list.empty(); }
 	protected:
 		enum class DMA_Req_Type { REQUEST_INFO, WRITE_DATA };
 		struct DMA_Req_Item
@@ -128,6 +130,7 @@ namespace SSD_Components
 		void Attach_to_device(Host_Components::PCIe_Switch* pcie_switch);
 		LHA_type Get_max_logical_sector_address();
 		unsigned int Get_no_of_LHAs_in_an_NVM_write_unit();
+		bool Is_drained() const { return input_stream_manager->Is_drained() && request_fetch_unit->Is_drained(); }
 	protected:
 		HostInterface_Types type;
 		LHA_type max_logical_sector_address;

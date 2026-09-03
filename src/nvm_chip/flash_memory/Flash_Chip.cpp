@@ -10,14 +10,16 @@ namespace NVM
 		Flash_Chip::Flash_Chip(const sim_object_id_type& id, flash_channel_ID_type channelID, flash_chip_ID_type localChipID,
 			Flash_Technology_Type flash_technology, 
 			unsigned int dieNo, unsigned int PlaneNoPerDie, unsigned int Block_no_per_plane, unsigned int Page_no_per_block,
-			sim_time_type* readLatency, sim_time_type* programLatency, sim_time_type eraseLatency,
-			sim_time_type suspendProgramLatency, sim_time_type suspendEraseLatency,
-			sim_time_type commProtocolDelayRead, sim_time_type commProtocolDelayWrite, sim_time_type commProtocolDelayErase)
+				sim_time_type* readLatency, sim_time_type* programLatency, sim_time_type eraseLatency,
+				sim_time_type suspendProgramLatency, sim_time_type suspendEraseLatency,
+				unsigned int pageCapacityBytes, sim_time_type measurementStartTime, sim_time_type measurementEndTime,
+				sim_time_type commProtocolDelayRead, sim_time_type commProtocolDelayWrite, sim_time_type commProtocolDelayErase)
 			: NVM_Chip(id), ChannelID(channelID), ChipID(localChipID), flash_technology(flash_technology),
 			status(Internal_Status::IDLE), die_no(dieNo), plane_no_in_die(PlaneNoPerDie), block_no_in_plane(Block_no_per_plane), page_no_per_block(Page_no_per_block),
 			_RBSignalDelayRead(commProtocolDelayRead), _RBSignalDelayWrite(commProtocolDelayWrite), _RBSignalDelayErase(commProtocolDelayErase),
-			lastTransferStart(INVALID_TIME), executionStartTime(INVALID_TIME), expectedFinishTime(INVALID_TIME),
-			STAT_readCount(0), STAT_progamCount(0), STAT_eraseCount(0),
+				lastTransferStart(INVALID_TIME), executionStartTime(INVALID_TIME), expectedFinishTime(INVALID_TIME),
+				page_capacity_bytes(pageCapacityBytes), measurement_start_time(measurementStartTime), measurement_end_time(measurementEndTime),
+				STAT_readCount(0), STAT_progamCount(0), STAT_eraseCount(0), STAT_measurementProgramCount(0),
 			STAT_totalSuspensionCount(0), STAT_totalResumeCount(0),
 			STAT_totalExecTime(0), STAT_totalXferTime(0), STAT_totalOverlappedXferExecTime(0)
 		{
@@ -163,8 +165,11 @@ namespace NVM
 				case CMD_PROGRAM_PAGE_COPYBACK:
 				case CMD_PROGRAM_PAGE_COPYBACK_MULTIPLANE:
 					DEBUG("Channel " << this->ChannelID << " Chip " << this->ChipID << "- Finished executing program command")
-					for (unsigned int planeCntr = 0; planeCntr < command->Address.size(); planeCntr++) {
-						STAT_progamCount++;
+						for (unsigned int planeCntr = 0; planeCntr < command->Address.size(); planeCntr++) {
+							STAT_progamCount++;
+							if (Simulator->Time() >= measurement_start_time && Simulator->Time() < measurement_end_time) {
+								STAT_measurementProgramCount++;
+							}
 						targetDie->Planes[command->Address[planeCntr].PlaneID]->Progam_count++;
 						targetDie->Planes[command->Address[planeCntr].PlaneID]->Blocks[command->Address[planeCntr].BlockID]->Pages[command->Address[planeCntr].PageID].Write_metadata(command->Meta_data[planeCntr]);
 					}
@@ -275,21 +280,28 @@ namespace NVM
 			std::string val = "@" + std::to_string(ChannelID) + "@" + std::to_string(ChipID);
 			xmlwriter.Write_attribute_string_inline(attr, val);
 
-			attr = "Fraction_of_Time_in_Execution";
-			val = std::to_string(STAT_totalExecTime / double(Simulator->Time()));
+				attr = "Fraction_of_Time_in_Execution";
+				val = std::to_string(Simulator->Time() == 0 ? 0.0 : STAT_totalExecTime / double(Simulator->Time()));
 			xmlwriter.Write_attribute_string_inline(attr, val);
 
 			attr = "Fraction_of_Time_in_DataXfer";
-			val = std::to_string(STAT_totalXferTime / double(Simulator->Time()));
+				val = std::to_string(Simulator->Time() == 0 ? 0.0 : STAT_totalXferTime / double(Simulator->Time()));
 			xmlwriter.Write_attribute_string_inline(attr, val);
 
 			attr = "Fraction_of_Time_in_DataXfer_and_Execution";
-			val = std::to_string(STAT_totalOverlappedXferExecTime / double(Simulator->Time()));
+				val = std::to_string(Simulator->Time() == 0 ? 0.0 : STAT_totalOverlappedXferExecTime / double(Simulator->Time()));
 			xmlwriter.Write_attribute_string_inline(attr, val);
 
 			attr = "Fraction_of_Time_Idle";
-			val = std::to_string((Simulator->Time() - STAT_totalOverlappedXferExecTime - STAT_totalXferTime) / double(Simulator->Time()));
-			xmlwriter.Write_attribute_string_inline(attr, val);
+				val = std::to_string(Simulator->Time() == 0 ? 1.0 :
+					(Simulator->Time() - STAT_totalOverlappedXferExecTime - STAT_totalXferTime) / double(Simulator->Time()));
+				xmlwriter.Write_attribute_string_inline(attr, val);
+
+				xmlwriter.Write_attribute_string_inline("Flash_Read_Command_Count", std::to_string(STAT_readCount));
+				xmlwriter.Write_attribute_string_inline("Flash_Program_Command_Count", std::to_string(STAT_progamCount));
+				xmlwriter.Write_attribute_string_inline("Flash_Erase_Command_Count", std::to_string(STAT_eraseCount));
+				xmlwriter.Write_attribute_string_inline("Measurement_Flash_Programmed_Bytes",
+					std::to_string(STAT_measurementProgramCount * static_cast<unsigned long long>(page_capacity_bytes)));
 		
 			xmlwriter.Write_end_element_tag();
 		}

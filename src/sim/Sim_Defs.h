@@ -20,7 +20,6 @@ typedef std::string sim_object_id_type;
 #define PRINT_ERROR(MSG) {\
 							std::cerr << "ERROR:" ;\
 							std::cerr << MSG << std::endl; \
-							std::cin.get();\
 							exit(1);\
 						 }
 #define PRINT_MESSAGE(M) std::cout << M << std::endl;

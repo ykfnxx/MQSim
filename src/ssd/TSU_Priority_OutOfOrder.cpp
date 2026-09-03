@@ -14,8 +14,8 @@ TSU_Priority_OutOfOrder::TSU_Priority_OutOfOrder(const sim_object_id_type &id,
                                                  sim_time_type WriteReasonableSuspensionTimeForRead,
                                                  sim_time_type EraseReasonableSuspensionTimeForRead,
                                                  sim_time_type EraseReasonableSuspensionTimeForWrite,
-                                                 bool EraseSuspensionEnabled,
-                                                 bool ProgramSuspensionEnabled)
+                                                 const std::vector<bool>& EraseSuspensionEnabled,
+                                                 const std::vector<bool>& ProgramSuspensionEnabled)
     : TSU_Base(id,
                ftl,
                NVMController,
@@ -119,6 +119,22 @@ void TSU_Priority_OutOfOrder::Validate_simulation_config()
 
 void TSU_Priority_OutOfOrder::Execute_simulator_event(MQSimEngine::Sim_Event *event)
 {
+}
+
+bool TSU_Priority_OutOfOrder::Is_drained() const
+{
+    if (!Input_slots_are_drained()) return false;
+    for (unsigned int channel = 0; channel < channel_count; ++channel) {
+        for (unsigned int chip = 0; chip < chip_no_per_channel; ++chip) {
+            for (unsigned int priority = 0; priority < IO_Flow_Priority_Class::NUMBER_OF_PRIORITY_LEVELS; ++priority) {
+                if (!UserReadTRQueue[channel][chip][priority].empty() || !UserWriteTRQueue[channel][chip][priority].empty()) return false;
+            }
+            if (!GCReadTRQueue[channel][chip].empty() || !GCWriteTRQueue[channel][chip].empty() ||
+                !GCEraseTRQueue[channel][chip].empty() || !MappingReadTRQueue[channel][chip].empty() ||
+                !MappingWriteTRQueue[channel][chip].empty()) return false;
+        }
+    }
+    return true;
 }
 
 void TSU_Priority_OutOfOrder::Report_results_in_XML(std::string name_prefix, Utils::XmlWriter &xmlwriter)
@@ -272,6 +288,7 @@ void TSU_Priority_OutOfOrder::Schedule()
             break;
         }
     }
+	transaction_receive_slots.clear();
 
     for (flash_channel_ID_type channelID = 0; channelID < channel_count; channelID++)
     {
@@ -406,7 +423,7 @@ bool TSU_Priority_OutOfOrder::service_read_transaction(NVM::FlashMemory::Flash_C
     case ChipStatus::IDLE:
         break;
     case ChipStatus::WRITING:
-        if (!programSuspensionEnabled || _NVMController->HasSuspendedCommand(chip))
+        if (!programSuspensionEnabled[chip->ChannelID] || _NVMController->HasSuspendedCommand(chip))
         {
             return false;
         }
@@ -416,7 +433,7 @@ bool TSU_Priority_OutOfOrder::service_read_transaction(NVM::FlashMemory::Flash_C
         }
         suspensionRequired = true;
     case ChipStatus::ERASING:
-        if (!eraseSuspensionEnabled || _NVMController->HasSuspendedCommand(chip))
+        if (!eraseSuspensionEnabled[chip->ChannelID] || _NVMController->HasSuspendedCommand(chip))
         {
             return false;
         }
@@ -521,7 +538,7 @@ bool TSU_Priority_OutOfOrder::service_write_transaction(NVM::FlashMemory::Flash_
     case ChipStatus::IDLE:
         break;
     case ChipStatus::ERASING:
-        if (!eraseSuspensionEnabled || _NVMController->HasSuspendedCommand(chip))
+        if (!eraseSuspensionEnabled[chip->ChannelID] || _NVMController->HasSuspendedCommand(chip))
             return false;
         if (_NVMController->Expected_finish_time(chip) - Simulator->Time() < eraseReasonableSuspensionTimeForWrite)
             return false;

@@ -1,3 +1,5 @@
 MQSim
 build/
 /tests/trim/workload_scenario_1.xml
+/tests/dwpdsim_vnext/workload_scenario_1.xml
+/tests/dwpdsim_vnext/*.completion.csv

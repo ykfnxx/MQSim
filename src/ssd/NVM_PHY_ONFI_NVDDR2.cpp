@@ -31,6 +31,7 @@ namespace SSD_Components {
 					bookKeepingTable[channelID][chipID].Die_book_keeping_records[dieID].ActiveTransactions.clear();
 					bookKeepingTable[channelID][chipID].Die_book_keeping_records[dieID].SuspendedCommand = NULL;
 					bookKeepingTable[channelID][chipID].Die_book_keeping_records[dieID].SuspendedTransactions.clear();
+					bookKeepingTable[channelID][chipID].Die_book_keeping_records[dieID].ActiveTransfer = NULL;
 					bookKeepingTable[channelID][chipID].Die_book_keeping_records[dieID].Free = true;
 					bookKeepingTable[channelID][chipID].Die_book_keeping_records[dieID].Suspended = false;
 					bookKeepingTable[channelID][chipID].Die_book_keeping_records[dieID].DieInterleavedTime = INVALID_TIME;
@@ -121,6 +122,28 @@ namespace SSD_Components {
 	{
 		ChipBookKeepingEntry* chipBKE = &bookKeepingTable[transaction->Address.ChannelID][transaction->Address.ChipID];
 		return (chipBKE->Status != ChipStatus::IDLE);
+	}
+
+	bool NVM_PHY_ONFI_NVDDR2::Is_drained()
+	{
+		for (unsigned int channel = 0; channel < channel_count; ++channel) {
+			if (!WaitingReadTX[channel].empty() || !WaitingGCRead_TX[channel].empty() ||
+				!WaitingMappingRead_TX[channel].empty() || !WaitingCopybackWrites[channel].empty() ||
+				channels[channel]->GetStatus() != BusChannelStatus::IDLE) return false;
+			for (unsigned int chip = 0; chip < chip_no_per_channel; ++chip) {
+				const ChipBookKeepingEntry& chip_entry = bookKeepingTable[channel][chip];
+				if (chip_entry.Status != ChipStatus::IDLE || chip_entry.HasSuspend ||
+					!chip_entry.OngoingDieCMDTransfers.empty() || chip_entry.WaitingReadTXCount != 0 ||
+					chip_entry.No_of_active_dies != 0) return false;
+				for (unsigned int die = 0; die < die_no_per_chip; ++die) {
+					const DieBookKeepingEntry& die_entry = chip_entry.Die_book_keeping_records[die];
+					if (!die_entry.Free || die_entry.Suspended || die_entry.ActiveCommand != NULL ||
+						die_entry.SuspendedCommand != NULL || !die_entry.ActiveTransactions.empty() ||
+						!die_entry.SuspendedTransactions.empty() || die_entry.ActiveTransfer != NULL) return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	void NVM_PHY_ONFI_NVDDR2::Change_flash_page_status_for_preconditioning(const NVM::FlashMemory::Physical_Page_Address& page_address, const LPA_type lpa)

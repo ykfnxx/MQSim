@@ -47,6 +47,15 @@
 		<Chip_No_Per_Channel>1</Chip_No_Per_Channel>
 		<Flash_Comm_Protocol>NVDDR2</Flash_Comm_Protocol>
 		<Flash_Parameter_Set>
+			<Die_No_Per_Chip>1</Die_No_Per_Chip>
+			<Plane_No_Per_Die>1</Plane_No_Per_Die>
+			<Block_No_Per_Plane>32</Block_No_Per_Plane>
+			<Page_No_Per_Block>32</Page_No_Per_Block>
+			<Page_Capacity>8192</Page_Capacity>
+			<Page_Metadat_Capacity>448</Page_Metadat_Capacity>
+		</Flash_Parameter_Set>
+		<Flash_Media_Profile>
+			<Media_Profile_ID>default_profile</Media_Profile_ID>
 			<Flash_Technology>MLC</Flash_Technology>
 			<CMD_Suspension_Support>ERASE</CMD_Suspension_Support>
 			<Page_Read_Latency_LSB>75000</Page_Read_Latency_LSB>
@@ -59,12 +68,14 @@
 			<Block_PE_Cycles_Limit>10000</Block_PE_Cycles_Limit>
 			<Suspend_Erase_Time>700000</Suspend_Erase_Time>
 			<Suspend_Program_Time>100000</Suspend_Program_Time>
-			<Die_No_Per_Chip>1</Die_No_Per_Chip>
-			<Plane_No_Per_Die>1</Plane_No_Per_Die>
-			<Block_No_Per_Plane>32</Block_No_Per_Plane>
-			<Page_No_Per_Block>32</Page_No_Per_Block>
-			<Page_Capacity>8192</Page_Capacity>
-			<Page_Metadat_Capacity>448</Page_Metadat_Capacity>
-		</Flash_Parameter_Set>
+		</Flash_Media_Profile>
+		<Flash_Pool_Parameter_Set>
+			<Pool_ID>default</Pool_ID>
+			<Channel_IDs>0</Channel_IDs>
+			<Logical_Capacity_In_Sectors>14000</Logical_Capacity_In_Sectors>
+			<Media_Profile_ID>default_profile</Media_Profile_ID>
+		</Flash_Pool_Parameter_Set>
+		<Measurement_Start_Time_Ns>0</Measurement_Start_Time_Ns>
+		<Measurement_End_Time_Ns>18446744073709551615</Measurement_End_Time_Ns>
 	</Device_Parameter_Set>
 </Execution_Parameter_Set>

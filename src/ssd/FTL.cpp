@@ -16,7 +16,7 @@ namespace SSD_Components
 	FTL::FTL(const sim_object_id_type& id, Data_Cache_Manager_Base* data_cache_manager,
 		unsigned int channel_no, unsigned int chip_no_per_channel, unsigned int die_no_per_chip, unsigned int plane_no_per_die,
 		unsigned int block_no_per_plane, unsigned int page_no_per_block, unsigned int page_size_in_sectors, 
-		sim_time_type avg_flash_read_latency, sim_time_type avg_flash_program_latency, 
+		const std::vector<sim_time_type>& avg_flash_read_latency, const std::vector<sim_time_type>& avg_flash_program_latency,
 		double over_provisioning_ratio, unsigned int max_allowed_block_erase_count, int seed) :
 		NVM_Firmware(id, data_cache_manager), random_generator(seed),
 		channel_no(channel_no), chip_no_per_channel(chip_no_per_channel), die_no_per_chip(die_no_per_chip), plane_no_per_die(plane_no_per_die),
@@ -60,7 +60,8 @@ namespace SSD_Components
 					break;
 				case Utils::Request_Generator_Type::QUEUE_DEPTH:
 				{
-					sim_time_type max_arrival_time = sim_time_type(stat->Read_ratio * double(avg_flash_read_latency) + (1 - stat->Read_ratio) * double(avg_flash_program_latency));
+					sim_time_type max_arrival_time = sim_time_type(stat->Read_ratio * double(avg_flash_read_latency[stat->Stream_id]) +
+						(1 - stat->Read_ratio) * double(avg_flash_program_latency[stat->Stream_id]));
 					double avg_arrival_time = double(max_arrival_time) / double(stat->Request_queue_depth);
 					overall_rate += 1.0 / avg_arrival_time * SIM_TIME_TO_SECONDS_COEFF * stat->Average_request_size_sector;
 					break;
@@ -438,6 +439,7 @@ namespace SSD_Components
 				double r_to_f_ratio = std::sqrt(double(stat->Ratio_of_traffic_accessing_hot_region) / double(stat->Ratio_of_hot_addresses_to_whole_working_set));
 				switch (GC_and_WL_Unit->Get_gc_policy()) {
 					case GC_Block_Selection_Policy_Type::GREEDY://Based on: B. Van Houdt, "A mean field model for a class of garbage collection algorithms in flash-based solid state drives", SIGMETRICS 2013.
+					case GC_Block_Selection_Policy_Type::KV_THREE_GREEDY:
 					case GC_Block_Selection_Policy_Type::FIFO://Could be estimated with greedy for large page_no_per_block values, as mentioned in //Based on: B. Van Houdt, "A mean field model for a class of garbage collection algorithms in flash-based solid state drives", SIGMETRICS 2013.
 					{
 						for (unsigned int i = 0; i <= page_no_per_block; i++) {
@@ -540,6 +542,7 @@ namespace SSD_Components
 				//None of the GC policies change the the status of blocks in the steady state assuming over-provisioning ratio is always greater than 0
 				switch (GC_and_WL_Unit->Get_gc_policy()) {
 					case GC_Block_Selection_Policy_Type::GREEDY:
+					case GC_Block_Selection_Policy_Type::KV_THREE_GREEDY:
 					case GC_Block_Selection_Policy_Type::RANDOM_PP:
 					case GC_Block_Selection_Policy_Type::RGA:
 					case GC_Block_Selection_Policy_Type::FIFO:
@@ -552,6 +555,7 @@ namespace SSD_Components
 			{
 				switch (GC_and_WL_Unit->Get_gc_policy()) {
 					case GC_Block_Selection_Policy_Type::GREEDY://Based on: B. Van Houdt, "A mean field model for a class of garbage collection algorithms in flash-based solid state drives", SIGMETRICS 2013.
+					case GC_Block_Selection_Policy_Type::KV_THREE_GREEDY:
 					case GC_Block_Selection_Policy_Type::FIFO://Could be estimated with greedy for large page_no_per_block values, as mentioned in //Based on: B. Van Houdt, "A mean field model for a class of garbage collection algorithms in flash-based solid state drives", SIGMETRICS 2013.
 					{
 						for (unsigned int i = 0; i <= page_no_per_block; i++) {
@@ -650,7 +654,8 @@ namespace SSD_Components
 									break;
 								case Utils::Request_Generator_Type::QUEUE_DEPTH:
 								{
-									sim_time_type max_arrival_time = sim_time_type(stat->Read_ratio * double(avg_flash_read_latency) + (1 - stat->Read_ratio) * double(avg_flash_program_latency));
+									sim_time_type max_arrival_time = sim_time_type(stat->Read_ratio * double(avg_flash_read_latency[stat->Stream_id]) +
+										(1 - stat->Read_ratio) * double(avg_flash_program_latency[stat->Stream_id]));
 									double avg_arrival_time = double(max_arrival_time) / double(stat->Request_queue_depth);
 									flow_rate = 1.0 / avg_arrival_time * SIM_TIME_TO_SECONDS_COEFF * stat->Average_request_size_sector;
 									break;
@@ -869,9 +874,33 @@ namespace SSD_Components
 		val = std::to_string(Stats::total_writeTR_CMT_queries);
 		xmlwriter.Write_attribute_string_inline(attr, val);
 
-		attr = "Total_GC_Executions";
-		val = std::to_string(Stats::Total_gc_executions);
-		xmlwriter.Write_attribute_string_inline(attr, val);
+			attr = "Total_GC_Executions";
+			val = std::to_string(Stats::Total_gc_executions);
+			xmlwriter.Write_attribute_string_inline(attr, val);
+
+			attr = "Received_Trim_Command_Count";
+			val = std::to_string(Stats::Total_received_trim_commands);
+			xmlwriter.Write_attribute_string_inline(attr, val);
+
+			attr = "Requested_Trim_Sector_Count";
+			val = std::to_string(Stats::Total_requested_trim_sectors);
+			xmlwriter.Write_attribute_string_inline(attr, val);
+
+			attr = "Effective_Trimmed_Sector_Count";
+			val = std::to_string(Stats::Total_trimmed_sectors);
+			xmlwriter.Write_attribute_string_inline(attr, val);
+
+			attr = "GC_Execution_Count";
+			val = std::to_string(Stats::Total_gc_executions);
+			xmlwriter.Write_attribute_string_inline(attr, val);
+
+			attr = "GC_Page_Read_Count";
+			val = std::to_string(Stats::Total_gc_page_reads);
+			xmlwriter.Write_attribute_string_inline(attr, val);
+
+			attr = "GC_Page_Program_Count";
+			val = std::to_string(Stats::Total_gc_page_programs);
+			xmlwriter.Write_attribute_string_inline(attr, val);
 
 		attr = "Trimmed_Sector_Count";
 		val = std::to_string(Stats::Total_trimmed_sectors);
@@ -882,7 +911,8 @@ namespace SSD_Components
 		xmlwriter.Write_attribute_string_inline(attr, val);
 
 		attr = "Average_Page_Movement_For_GC";
-		val = std::to_string(double(Stats::Total_page_movements_for_gc) / double(Stats::Total_gc_executions));
+			val = std::to_string(Stats::Total_gc_executions == 0 ? 0.0 :
+				double(Stats::Total_page_movements_for_gc) / double(Stats::Total_gc_executions));
 		xmlwriter.Write_attribute_string_inline(attr, val);
 
 		attr = "Total_WL_Executions";
@@ -890,7 +920,8 @@ namespace SSD_Components
 		xmlwriter.Write_attribute_string_inline(attr, val);
 
 		attr = "Average_Page_Movement_For_WL";
-		val = std::to_string(double(Stats::Total_page_movements_for_wl) / double(Stats::Total_wl_executions));
+			val = std::to_string(Stats::Total_wl_executions == 0 ? 0.0 :
+				double(Stats::Total_page_movements_for_wl) / double(Stats::Total_wl_executions));
 		xmlwriter.Write_attribute_string_inline(attr, val);
 
 		xmlwriter.Write_end_element_tag();
@@ -914,8 +945,17 @@ namespace SSD_Components
 		return ((page_status_type)~(0xffffffffffffffff << (int)1)) << (int)(lha % page_size_in_sectors);
 	}
 
+	bool FTL::Is_drained() const
+	{
+		return Address_Mapping_Unit->Is_drained() && BlockManager->Is_drained() && TSU->Is_drained();
+	}
+
 	void FTL::Trim(User_Request* user_request)
 	{
+		Stats::Total_received_trim_commands++;
+		Stats::Total_received_trim_commands_per_stream[user_request->Stream_id]++;
+		Stats::Total_requested_trim_sectors += user_request->SizeInSectors;
+		Stats::Total_requested_trim_sectors_per_stream[user_request->Stream_id] += user_request->SizeInSectors;
 		std::vector<Trim_Operation> trim_operations(user_request->Trim_operations.begin(), user_request->Trim_operations.end());
 		user_request->Trim_operations.clear();
 		user_request->Pending_trim_operations = (unsigned int)trim_operations.size();

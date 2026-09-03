@@ -48,7 +48,8 @@ namespace Utils
 		unsigned int channel_count, unsigned int chip_no_per_channel, unsigned int die_no_per_chip, unsigned int plane_no_per_die,
 		std::vector<std::vector<flash_channel_ID_type>> stream_channel_ids, std::vector<std::vector<flash_chip_ID_type>> stream_chip_ids,
 		std::vector<std::vector<flash_die_ID_type>> stream_die_ids, std::vector<std::vector<flash_plane_ID_type>> stream_plane_ids,
-		unsigned int block_no_per_plane, unsigned int page_no_per_block, unsigned int sector_no_per_page, double overprovisioning_ratio) 
+		const std::vector<LHA_type>& stream_logical_capacities, unsigned int block_no_per_plane,
+		unsigned int page_no_per_block, unsigned int sector_no_per_page, double overprovisioning_ratio)
 	{
 		if (initialized) {
 			return;
@@ -133,20 +134,19 @@ namespace Utils
 
 		std::vector<LHA_type> lsa_count_per_stream;
 		for (unsigned int stream_id = 0; stream_id < concurrent_stream_no; stream_id++) {
-			LHA_type lsa_count = 0;
+			LHA_type physical_sector_count = 0;
 			for (flash_channel_ID_type channel_id = 0; channel_id < stream_channel_ids[stream_id].size(); channel_id++) {
 				for (flash_chip_ID_type chip_id = 0; chip_id < stream_chip_ids[stream_id].size(); chip_id++) {
 					for (flash_die_ID_type die_id = 0; die_id < stream_die_ids[stream_id].size(); die_id++) {
 						for (flash_plane_ID_type plane_id = 0; plane_id < stream_plane_ids[stream_id].size(); plane_id++) {
-							lsa_count += (LHA_type)((block_no_per_plane * page_no_per_block * sector_no_per_page * (1.0 - overprovisioning_ratio) *
-								1.0 / double(resource_list[stream_channel_ids[stream_id][channel_id]][stream_chip_ids[stream_id][chip_id]][stream_die_ids[stream_id][die_id]][stream_plane_ids[stream_id][plane_id]])));
+							physical_sector_count += static_cast<LHA_type>(block_no_per_plane) * page_no_per_block * sector_no_per_page;
 						}
 					}
 				}
 			}
-			pdas_per_flow.push_back(LHA_type(double(lsa_count) / (1.0 - overprovisioning_ratio)));
+			pdas_per_flow.push_back(physical_sector_count);
 			total_pda_no += pdas_per_flow[stream_id];
-			lsa_count_per_stream.push_back(lsa_count);
+			lsa_count_per_stream.push_back(stream_logical_capacities[stream_id]);
 		}
 
 		total_lha_no = 0;
@@ -161,14 +161,6 @@ namespace Utils
 
 	double Logical_Address_Partitioning_Unit::Get_share_of_physcial_pages_in_plane(flash_channel_ID_type channel_id, flash_chip_ID_type chip_id, flash_die_ID_type die_id, flash_plane_ID_type plane_id)
 	{
-		switch (hostinterface_type) {
-			case HostInterface_Types::NVME:
-				return 1.0 / double(resource_list[channel_id][chip_id][die_id][plane_id]);
-			case HostInterface_Types::SATA:
-			default:
-				break;
-		}
-
 		return 1.0;
 	}
 

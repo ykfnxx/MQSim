@@ -1,6 +1,7 @@
 #ifndef STATS_H
 #define STATS_H
 
+#include <vector>
 #include "SSD_Defs.h"
 
 namespace SSD_Components
@@ -30,7 +31,16 @@ namespace SSD_Components
 
 		static unsigned int Total_gc_executions, Total_gc_executions_per_stream[MAX_SUPPORT_STREAMS];
 		static unsigned int Total_page_movements_for_gc, Total_gc_page_movements_per_stream[MAX_SUPPORT_STREAMS];
+		static unsigned long long Total_gc_page_reads, Total_gc_page_programs;
+		static unsigned long long Total_gc_page_reads_per_stream[MAX_SUPPORT_STREAMS], Total_gc_page_programs_per_stream[MAX_SUPPORT_STREAMS];
+		static unsigned long long Total_received_trim_commands, Total_requested_trim_sectors;
 		static unsigned long long Total_trimmed_sectors, Total_pages_invalidated_by_trim;
+		static unsigned long long Total_received_trim_commands_per_stream[MAX_SUPPORT_STREAMS];
+		static unsigned long long Total_requested_trim_sectors_per_stream[MAX_SUPPORT_STREAMS];
+		static unsigned long long Total_trimmed_sectors_per_stream[MAX_SUPPORT_STREAMS];
+		static unsigned long long Total_pages_invalidated_by_trim_per_stream[MAX_SUPPORT_STREAMS];
+		static std::vector<unsigned long long> Channel_host_read_bytes, Channel_host_write_bytes;
+		static std::vector<unsigned long long> Channel_requested_trim_sectors, Channel_effective_trimmed_sectors;
 
 		static unsigned int Total_wl_executions, Total_wl_executions_per_stream[MAX_SUPPORT_STREAMS];
 		static unsigned int Total_page_movements_for_wl, Total_wl_page_movements_per_stream[MAX_SUPPORT_STREAMS];

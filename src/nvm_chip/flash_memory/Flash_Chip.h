@@ -26,6 +26,7 @@ namespace NVM
 				unsigned int dieNo, unsigned int PlaneNoPerDie, unsigned int Block_no_per_plane, unsigned int Page_no_per_block,
 				sim_time_type *readLatency, sim_time_type *programLatency, sim_time_type eraseLatency,
 				sim_time_type suspendProgramLatency, sim_time_type suspendEraseLatency,
+				unsigned int pageCapacityBytes, sim_time_type measurementStartTime, sim_time_type measurementEndTime,
 				sim_time_type commProtocolDelayRead = 20, sim_time_type commProtocolDelayWrite = 0, sim_time_type commProtocolDelayErase = 0);
 			~Flash_Chip();
 			flash_channel_ID_type ChannelID;
@@ -114,8 +115,12 @@ namespace NVM
 
 			void Suspend(flash_die_ID_type dieID);
 			void Resume(flash_die_ID_type dieID);
-			sim_time_type GetSuspendProgramTime();
-			sim_time_type GetSuspendEraseTime();
+				sim_time_type GetSuspendProgramTime();
+				sim_time_type GetSuspendEraseTime();
+				unsigned long Get_read_count() const { return STAT_readCount; }
+				unsigned long Get_program_count() const { return STAT_progamCount; }
+				unsigned long Get_erase_count() const { return STAT_eraseCount; }
+				unsigned long Get_measurement_program_count() const { return STAT_measurementProgramCount; }
 			void Report_results_in_XML(std::string name_prefix, Utils::XmlWriter& xmlwriter);
 			LPA_type Get_metadata(flash_die_ID_type die_id, flash_plane_ID_type plane_id, flash_block_ID_type block_id, flash_page_ID_type page_id);//A simplification to decrease the complexity of GC execution! The GC unit may need to know the metadata of a page to decide if a page is valid or invalid. 
 		private:
@@ -130,10 +135,13 @@ namespace NVM
 			sim_time_type *_readLatency, *_programLatency, _eraseLatency;
 			sim_time_type _suspendProgramLatency, _suspendEraseLatency;
 			sim_time_type _RBSignalDelayRead, _RBSignalDelayWrite, _RBSignalDelayErase;
-			sim_time_type lastTransferStart;
-			sim_time_type executionStartTime, expectedFinishTime;
+				sim_time_type lastTransferStart;
+				sim_time_type executionStartTime, expectedFinishTime;
+				unsigned int page_capacity_bytes;
+				sim_time_type measurement_start_time, measurement_end_time;
 
-			unsigned long STAT_readCount, STAT_progamCount, STAT_eraseCount;
+				unsigned long STAT_readCount, STAT_progamCount, STAT_eraseCount;
+				unsigned long STAT_measurementProgramCount;
 			unsigned long STAT_totalSuspensionCount, STAT_totalResumeCount;
 			sim_time_type STAT_totalExecTime, STAT_totalXferTime, STAT_totalOverlappedXferExecTime;
 

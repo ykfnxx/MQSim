@@ -26,10 +26,12 @@ namespace SSD_Components
 		FTL(const sim_object_id_type& id, Data_Cache_Manager_Base* data_cache, 
 			unsigned int channel_no, unsigned int chip_no_per_channel, unsigned int die_no_per_chip, unsigned int plane_no_per_die, 
 			unsigned int block_no_per_plane, unsigned int page_no_per_block, unsigned int page_size_in_sectors, 
-			sim_time_type avg_flash_read_latency, sim_time_type avg_flash_program_latency, double over_provisioning_ratio, unsigned int max_allowed_block_erase_count, int seed);
+			const std::vector<sim_time_type>& avg_flash_read_latency, const std::vector<sim_time_type>& avg_flash_program_latency,
+			double over_provisioning_ratio, unsigned int max_allowed_block_erase_count, int seed);
 		~FTL();
 		void Perform_precondition(std::vector<Utils::Workload_Statistics*> workload_stats);
 		void Validate_simulation_config();
+		bool Is_drained() const;
 		void Start_simulation();
 		void Execute_simulator_event(MQSimEngine::Sim_Event*);
 		LPA_type Convert_host_logical_address_to_device_address(LHA_type lha);
@@ -49,8 +51,8 @@ namespace SSD_Components
 		int preconditioning_seed;
 		Utils::RandomGenerator random_generator;
 		double over_provisioning_ratio;
-		sim_time_type avg_flash_read_latency;
-		sim_time_type avg_flash_program_latency;
+		std::vector<sim_time_type> avg_flash_read_latency;
+		std::vector<sim_time_type> avg_flash_program_latency;
 	};
 }
 

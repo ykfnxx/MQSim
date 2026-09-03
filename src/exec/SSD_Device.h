@@ -14,6 +14,7 @@
 #include "../ssd/NVM_PHY_Base.h"
 #include "../ssd/NVM_Channel_Base.h"
 #include "../host/PCIe_Switch.h"
+#include "../host/IO_Flow_Base.h"
 #include "../nvm_chip/NVM_Types.h"
 #include "Device_Parameter_Set.h"
 #include "IO_Flow_Parameter_Set.h"
@@ -42,9 +43,13 @@ public:
 	unsigned int Get_no_of_LHAs_in_an_NVM_write_unit();
 
 	void Attach_to_host(Host_Components::PCIe_Switch* pcie_switch);
+	void Attach_host_flows(const std::vector<Host_Components::IO_Flow_Base*>* flows) { host_flows = flows; }
+	sim_time_type Get_measurement_start_time() const { return parameters->Measurement_Start_Time_Ns; }
+	sim_time_type Get_measurement_end_time() const { return parameters->Measurement_End_Time_Ns; }
 	void Perform_preconditioning(std::vector<Utils::Workload_Statistics*> workload_stats);
 	void Start_simulation();
 	void Validate_simulation_config();
+	void Validate_simulation_drained();
 	void Execute_simulator_event(MQSimEngine::Sim_Event* event);
 	static LPA_type Convert_host_logical_address_to_device_address(LHA_type lha);
 	static page_status_type Find_NVM_subunit_access_bitmap(LHA_type lha);
@@ -54,6 +59,9 @@ public:
 
 private:
 	static SSD_Device * my_instance;//Used in static functions
+	Device_Parameter_Set* parameters;
+	std::vector<IO_Flow_Parameter_Set*>* io_flows;
+	const std::vector<Host_Components::IO_Flow_Base*>* host_flows = NULL;
 };
 
 #endif //!SSD_DEVICE_H
