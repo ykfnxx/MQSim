@@ -187,6 +187,7 @@ namespace SSD_Components
 		std::set<NVM_Transaction_Flash_WR*>**** Write_transactions_for_overfull_planes;
 
 		void generate_flash_read_request_for_mapping_data(const stream_id_type streamID, const LPA_type lpn);
+		void evict_cmt_entry(stream_id_type requesting_stream);
 		void generate_flash_writeback_request_for_mapping_data(const stream_id_type streamID, const LPA_type lpn);
 
 		unsigned int no_of_translation_entries_per_page;

@@ -247,8 +247,9 @@ namespace SSD_Components
 	
 	bool GC_and_WL_Unit_Base::Stop_servicing_writes(const NVM::FlashMemory::Physical_Page_Address& plane_address)
 	{
-		PlaneBookKeepingType* pbke = &(_my_instance->block_manager->plane_manager[plane_address.ChannelID][plane_address.ChipID][plane_address.DieID][plane_address.PlaneID]);
-		return block_manager->Get_pool_size(plane_address) < max_ongoing_gc_reqs_per_plane;
+		//A user write may need a new frontier. Keep the last blocks available
+		//for relocation until GC returns its erased victims to the free pool.
+		return block_manager->Get_pool_size(plane_address) <= max_ongoing_gc_reqs_per_plane;
 	}
 
 	bool GC_and_WL_Unit_Base::is_safe_gc_wl_candidate(const PlaneBookKeepingType* plane_record, const flash_block_ID_type gc_wl_candidate_block_id)

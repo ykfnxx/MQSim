@@ -3,6 +3,7 @@
 
 import os
 from pathlib import Path
+import random
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
@@ -14,7 +15,7 @@ BINARY = Path(os.environ.get("MQSIM_BINARY", REPO / "MQSim")).resolve()
 REQUEST_COUNT = 4096
 
 
-def run_case(directory, scheduler, gc_pressure):
+def run_case(directory, scheduler, gc_pressure, access_pattern="sequential", request_count=REQUEST_COUNT):
     config = ET.parse(FIXTURE / "ssdconfig.xml")
     config.find(".//Transaction_Scheduling_Policy").text = scheduler
     # The fixture's 3/7 erase limits are for wear-limit smoke tests.
@@ -31,10 +32,21 @@ def run_case(directory, scheduler, gc_pressure):
         working_set_pages = REQUEST_COUNT
     config.write(directory / "ssd.xml")
 
-    trace = directory / "write.trace"
+    rng = random.Random(321)
+    if access_pattern == "random_write":
+        operations = [(rng.randrange(working_set_pages), 0) for _ in range(request_count)]
+    elif access_pattern == "mixed":
+        # Populate all pages before mixing reads with random overwrites.
+        operations = [(page, 0) for page in range(working_set_pages)]
+        operations += [(rng.randrange(working_set_pages), int(rng.random() < 0.25))
+                       for _ in range(request_count - working_set_pages)]
+    else:
+        operations = [(index % working_set_pages, 0) for index in range(request_count)]
+    write_count = sum(operation == 0 for _, operation in operations)
+    trace = directory / "io.trace"
     trace.write_text("".join(
-        f"{index * 1000000} 0 {(index % working_set_pages) * 16} 16 0 {index} -1\n"
-        for index in range(REQUEST_COUNT)
+        f"{index * 1000000} 0 {page * 16} 16 {operation} {index} -1\n"
+        for index, (page, operation) in enumerate(operations)
     ))
     workload = ET.parse(FIXTURE / "workload.xml")
     scenario = workload.find("IO_Scenario")
@@ -52,9 +64,10 @@ def run_case(directory, scheduler, gc_pressure):
     assert completed.returncode == 0, completed.stdout + completed.stderr
     result = ET.parse(directory / "workload_scenario_1.xml")
     flow = result.find("Host/Host.IO_Flow")
-    assert int(flow.findtext("Generated_Request_Count")) == REQUEST_COUNT
-    assert int(flow.findtext("Completed_Request_Count")) == REQUEST_COUNT
-    assert int(flow.findtext("Bytes_Transferred_Write")) == REQUEST_COUNT * 8192
+    assert int(flow.findtext("Generated_Request_Count")) == request_count
+    assert int(flow.findtext("Completed_Request_Count")) == request_count
+    assert int(flow.findtext("Bytes_Transferred_Write")) == write_count * 8192
+    assert int(flow.findtext("Bytes_Transferred_Read")) == (request_count - write_count) * 8192
 
     queues = result.findall(".//SSDDevice.TSU.Mapping_Write_TR_Queue")
     enqueued = sum(int(queue.get("No_Of_Transactions_Enqueued")) for queue in queues)
@@ -65,7 +78,11 @@ def run_case(directory, scheduler, gc_pressure):
     assert int(ftl.get("Issued_Flash_Read_CMD_For_Mapping")) > 0
     if gc_pressure:
         assert int(ftl.get("GC_Execution_Count")) > 0
-    print(f"{scheduler}, gc_pressure={gc_pressure}: {REQUEST_COUNT} requests completed, "
+    if access_pattern != "sequential":
+        # Sequential overwrites can erase fully invalid blocks without moving pages.
+        assert int(ftl.get("GC_Page_Read_Count")) > 0
+        assert int(ftl.get("GC_Page_Program_Count")) > 0
+    print(f"{scheduler}, gc_pressure={gc_pressure}, {access_pattern}: {request_count} requests completed, "
           f"{enqueued} mapping writebacks drained")
 
 
@@ -76,6 +93,12 @@ def main():
                 directory = Path(temporary) / f"{scheduler}-{gc_pressure}"
                 directory.mkdir()
                 run_case(directory, scheduler, gc_pressure)
+            for access_pattern, request_count in (("random_write", 512),
+                                                  ("random_write", REQUEST_COUNT),
+                                                  ("mixed", REQUEST_COUNT)):
+                directory = Path(temporary) / f"{scheduler}-{access_pattern}-{request_count}"
+                directory.mkdir()
+                run_case(directory, scheduler, True, access_pattern, request_count)
 
 
 if __name__ == "__main__":

@@ -107,7 +107,12 @@ namespace SSD_Components
 		plane_record->Free_pages_count--;
 		page_address.BlockID = plane_record->Translation_wf[streamID]->BlockID;
 		page_address.PageID = plane_record->Translation_wf[streamID]->Current_page_write_index++;
-		program_transaction_issued(page_address);
+		//GC completion does not decrement the ordinary program counter.
+		if (is_for_gc) {
+			plane_record->Translation_wf[streamID]->Last_write_time = Simulator->Time();
+		} else {
+			program_transaction_issued(page_address);
+		}
 
 		//The current write frontier block for translation pages is written to the end
 		if (plane_record->Translation_wf[streamID]->Current_page_write_index == pages_no_per_block) {

@@ -150,7 +150,23 @@ Run `bash tests/dwpdsim_vnext/test_vnext.sh` for the DWPDSim integration regress
 This includes 4096-request mapping-cache eviction replays for both TSU schedulers,
 with and without GC pressure. The replays verify request completion and queue drain,
 including mapping writebacks and their read-before-write dependencies. Run this part
-alone with `python3 tests/dwpdsim_vnext/test_tsu_drain.py`.
+alone with `python3 tests/dwpdsim_vnext/test_tsu_drain.py`. Random overwrite and
+mixed read/write cases additionally exercise GC page relocation and resumption of
+requests blocked by GC, checking that all host requests complete and GC state drains.
+
+The integration suite also runs a 1000-I/O version of the multi-flow stress matrix.
+For the full 22-case matrix (50,000 I/O per case), run:
+
+```bash
+python3 tests/dwpdsim_vnext/stress_replay.py --count 50000 --output build/io-stress-run
+```
+
+The matrix covers shared/partitioned CMTs, both TSU schedulers, burst arrivals,
+partial-page I/O, and TRIM. Same-page requests have completion dependencies, and
+effective TRIM sectors are checked against an independent bitmap model. The runner
+retains XML configurations, traces, logs, and JSON summaries under the output path,
+and exits nonzero on replay or statistics failures. Use `--seed` to vary the workload
+and `--binary` to test a separate build, including an AddressSanitizer build.
 
 The following parameters are used to define a trace-based workload:
 1. **Priority_Class:** the priority class of the I/O queue associated with this I/O request. Range = {URGENT, HIGH, MEDIUM, LOW}.

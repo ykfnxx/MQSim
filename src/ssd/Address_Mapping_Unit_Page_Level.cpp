@@ -825,21 +825,7 @@ namespace SSD_Components
 		} else {
 			if (!domains[transaction->Stream_id]->Mapping_entry_accessible(ideal_mapping_table, transaction->Stream_id, transaction->LPA)) {
 				if (!domains[transaction->Stream_id]->CMT->Check_free_slot_availability()) {
-					LPA_type evicted_lpa;
-					CMTSlotType evictedItem = domains[transaction->Stream_id]->CMT->Evict_one_slot(evicted_lpa);
-					if (evictedItem.Dirty) {
-						/* In order to eliminate possible race conditions for the requests that
-						* will access the evicted lpa in the near future (before the translation
-						* write finishes), MQSim updates GMT (the on flash mapping table) right
-						* after eviction happens.*/
-						domains[transaction->Stream_id]->GlobalMappingTable[evicted_lpa].PPA = evictedItem.PPA;
-						domains[transaction->Stream_id]->GlobalMappingTable[evicted_lpa].WrittenStateBitmap = evictedItem.WrittenStateBitmap;
-						if (domains[transaction->Stream_id]->GlobalMappingTable[evicted_lpa].TimeStamp > CurrentTimeStamp) {
-							throw std::logic_error("Unexpected situation occured in handling GMT!");
-						}
-						domains[transaction->Stream_id]->GlobalMappingTable[evicted_lpa].TimeStamp = CurrentTimeStamp;
-						generate_flash_writeback_request_for_mapping_data(transaction->Stream_id, evicted_lpa);
-					}
+					evict_cmt_entry(transaction->Stream_id);
 				}
 				domains[transaction->Stream_id]->CMT->Reserve_slot_for_lpn(transaction->Stream_id, transaction->LPA);
 				domains[transaction->Stream_id]->CMT->Insert_new_mapping_info(transaction->Stream_id, transaction->LPA, Convert_address_to_ppa(transaction->Address), transaction->write_sectors_bitmap);
@@ -864,20 +850,7 @@ namespace SSD_Components
 				domains[stream_id]->Update_mapping_info(ideal_mapping_table, stream_id, transaction->LPA, transaction->PPA, transaction->write_sectors_bitmap);
 			} else { //the else block only executed for non-ideal mapping table in which CMT has a limited capacity and mapping data is read/written from/to the flash storage
 				if (!domains[stream_id]->CMT->Check_free_slot_availability()) {
-					LPA_type evicted_lpa;
-					CMTSlotType evictedItem = domains[stream_id]->CMT->Evict_one_slot(evicted_lpa);
-					if (evictedItem.Dirty) {
-						/* In order to eliminate possible race conditions for the requests that
-						* will access the evicted lpa in the near future (before the translation
-						* write finishes), MQSim updates GMT (the on flash mapping table) right
-						* after eviction happens.*/
-						domains[stream_id]->GlobalMappingTable[evicted_lpa].PPA = evictedItem.PPA;
-						domains[stream_id]->GlobalMappingTable[evicted_lpa].WrittenStateBitmap = evictedItem.WrittenStateBitmap;
-						if (domains[stream_id]->GlobalMappingTable[evicted_lpa].TimeStamp > CurrentTimeStamp)
-							throw std::logic_error("Unexpected situation occured in handling GMT!");
-						domains[stream_id]->GlobalMappingTable[evicted_lpa].TimeStamp = CurrentTimeStamp;
-						generate_flash_writeback_request_for_mapping_data(stream_id, evicted_lpa);
-					}
+					evict_cmt_entry(stream_id);
 				}
 				domains[stream_id]->CMT->Reserve_slot_for_lpn(stream_id, transaction->LPA);
 				domains[stream_id]->CMT->Insert_new_mapping_info(stream_id, transaction->LPA, transaction->PPA, transaction->write_sectors_bitmap);
@@ -1274,7 +1247,7 @@ namespace SSD_Components
 			block_manager->Invalidate_page_in_block(transaction->Stream_id, prevAddr);
 		}
 
-		block_manager->Allocate_block_and_page_in_plane_for_translation_write(transaction->Stream_id, transaction->Address, false);
+		block_manager->Allocate_block_and_page_in_plane_for_translation_write(transaction->Stream_id, transaction->Address, is_for_gc);
 		transaction->PPA = Convert_address_to_ppa(transaction->Address);
 		domain->GlobalTranslationDirectory[mvpn].MPPN = (MPPN_type)transaction->PPA;
 		domain->GlobalTranslationDirectory[mvpn].TimeStamp = CurrentTimeStamp;
@@ -1521,20 +1494,7 @@ namespace SSD_Components
 		Just create an entry in cache! No flash read is needed.*/
 		if (domain->GlobalTranslationDirectory[mvpn].MPPN == NO_MPPN) {
 			if (!domain->CMT->Check_free_slot_availability()) {
-				LPA_type evicted_lpa;
-				CMTSlotType evictedItem = domain->CMT->Evict_one_slot(evicted_lpa);
-				if (evictedItem.Dirty) {
-					/* In order to eliminate possible race conditions for the requests that
-					* will access the evicted lpa in the near future (before the translation
-					* write finishes), MQSim updates GMT (the on flash mapping table) right
-					* after eviction happens.*/
-					domain->GlobalMappingTable[evicted_lpa].PPA = evictedItem.PPA;
-					domain->GlobalMappingTable[evicted_lpa].WrittenStateBitmap = evictedItem.WrittenStateBitmap;
-					if (domain->GlobalMappingTable[evicted_lpa].TimeStamp > CurrentTimeStamp)
-						throw std::logic_error("Unexpected situation occurred in handling GMT!");
-					domain->GlobalMappingTable[evicted_lpa].TimeStamp = CurrentTimeStamp;
-					generate_flash_writeback_request_for_mapping_data(stream_id, evicted_lpa);
-				}
+				evict_cmt_entry(stream_id);
 			}
 			domain->CMT->Reserve_slot_for_lpn(stream_id, lpa);
 			domain->CMT->Insert_new_mapping_info(stream_id, lpa, NO_PPA, UNWRITTEN_LOGICAL_PAGE);
@@ -1554,20 +1514,7 @@ namespace SSD_Components
 				return false;
 			} else { //An entry should be created in the cache
 				if (!domain->CMT->Check_free_slot_availability()) {
-					LPA_type evicted_lpa;
-					CMTSlotType evictedItem = domain->CMT->Evict_one_slot(evicted_lpa);
-					if (evictedItem.Dirty) {
-						/* In order to eliminate possible race conditions for the requests that
-						* will access the evicted lpa in the near future (before the translation
-						* write finishes), MQSim updates GMT (the on flash mapping table) right
-						* after eviction happens.*/
-						domain->GlobalMappingTable[evicted_lpa].PPA = evictedItem.PPA;
-						domain->GlobalMappingTable[evicted_lpa].WrittenStateBitmap = evictedItem.WrittenStateBitmap;
-						if (domain->GlobalMappingTable[evicted_lpa].TimeStamp > CurrentTimeStamp)
-							throw std::logic_error("Unexpected situation occured in handling GMT!");
-						domain->GlobalMappingTable[evicted_lpa].TimeStamp = CurrentTimeStamp;
-						generate_flash_writeback_request_for_mapping_data(stream_id, evicted_lpa);
-					}
+					evict_cmt_entry(stream_id);
 				}
 				domain->CMT->Reserve_slot_for_lpn(stream_id, lpa);
 				domain->ArrivingMappingEntries.insert(std::pair<MVPN_type, LPA_type>(mvpn, lpa));
@@ -1580,20 +1527,7 @@ namespace SSD_Components
 		the flash program operation finishes and the entry it is cleared from DepartingMappingEntries.*/
 		if (domain->DepartingMappingEntries.find(mvpn) != domain->DepartingMappingEntries.end()) {
 			if (!domain->CMT->Check_free_slot_availability()) {
-				LPA_type evicted_lpa;
-				CMTSlotType evictedItem = domain->CMT->Evict_one_slot(evicted_lpa);
-				if (evictedItem.Dirty) {
-					/* In order to eliminate possible race conditions for the requests that
-					* will access the evicted lpa in the near future (before the translation
-					* write finishes), MQSim updates GMT (the on flash mapping table) right
-					* after eviction happens.*/
-					domain->GlobalMappingTable[evicted_lpa].PPA = evictedItem.PPA;
-					domain->GlobalMappingTable[evicted_lpa].WrittenStateBitmap = evictedItem.WrittenStateBitmap;
-					if (domain->GlobalMappingTable[evicted_lpa].TimeStamp > CurrentTimeStamp)
-						throw std::logic_error("Unexpected situation occured in handling GMT!");
-					domain->GlobalMappingTable[lpa].TimeStamp = CurrentTimeStamp;
-					generate_flash_writeback_request_for_mapping_data(stream_id, evicted_lpa);
-				}
+				evict_cmt_entry(stream_id);
 			}
 			domain->CMT->Reserve_slot_for_lpn(stream_id, lpa);
 			/*Hack: since we do not actually save the values of translation requests, we copy the mapping
@@ -1606,26 +1540,25 @@ namespace SSD_Components
 
 		//Non of the above options provide mapping data. So, MQSim, must read the translation data from flash memory
 		if (!domain->CMT->Check_free_slot_availability()) {
-			LPA_type evicted_lpa;
-			CMTSlotType evictedItem = domain->CMT->Evict_one_slot(evicted_lpa);
-			if (evictedItem.Dirty) {
-				/* In order to eliminate possible race conditions for the requests that
-				* will access the evicted lpa in the near future (before the translation
-				* write finishes), MQSim updates GMT (the on flash mapping table) right
-				* after eviction happens.*/
-				domain->GlobalMappingTable[evicted_lpa].PPA = evictedItem.PPA;
-				domain->GlobalMappingTable[evicted_lpa].WrittenStateBitmap = evictedItem.WrittenStateBitmap;
-				if (domain->GlobalMappingTable[evicted_lpa].TimeStamp > CurrentTimeStamp) {
-					throw std::logic_error("Unexpected situation occured in handling GMT!");
-				}
-				domain->GlobalMappingTable[evicted_lpa].TimeStamp = CurrentTimeStamp;
-				generate_flash_writeback_request_for_mapping_data(stream_id, evicted_lpa);
-			}
+			evict_cmt_entry(stream_id);
 		}
 		domain->CMT->Reserve_slot_for_lpn(stream_id, lpa);
 		generate_flash_read_request_for_mapping_data(stream_id, lpa);//consult GTD and create read transaction
 		
 		return false;
+	}
+
+	void Address_Mapping_Unit_Page_Level::evict_cmt_entry(stream_id_type requesting_stream)
+	{
+		LPA_type lpa;
+		CMTSlotType entry = domains[requesting_stream]->CMT->Evict_one_slot(lpa);
+		if (!entry.Dirty) return;
+		//A shared CMT may evict an entry belonging to a different flow or pool.
+		AddressMappingDomain* owner = domains[entry.Stream_id];
+		owner->GlobalMappingTable[lpa].PPA = entry.PPA;
+		owner->GlobalMappingTable[lpa].WrittenStateBitmap = entry.WrittenStateBitmap;
+		owner->GlobalMappingTable[lpa].TimeStamp = CurrentTimeStamp;
+		generate_flash_writeback_request_for_mapping_data(entry.Stream_id, lpa);
 	}
 
 	void Address_Mapping_Unit_Page_Level::generate_flash_writeback_request_for_mapping_data(const stream_id_type stream_id, const LPA_type lpn)
@@ -1645,8 +1578,10 @@ namespace SSD_Components
 			for (LPA_type lpn_itr = startLPN; lpn_itr <= endLPN; lpn_itr++) {
 				if (domains[stream_id]->CMT->Exists(stream_id, lpn_itr)) {
 					if (domains[stream_id]->CMT->Is_dirty(stream_id, lpn_itr)) {
-						domains[stream_id]->CMT->Make_clean(stream_id, lpn_itr);
 						domains[stream_id]->GlobalMappingTable[lpn_itr].PPA = domains[stream_id]->CMT->Retrieve_ppa(stream_id, lpn_itr);
+						domains[stream_id]->GlobalMappingTable[lpn_itr].WrittenStateBitmap = domains[stream_id]->CMT->Get_bitmap_vector_of_written_sectors(stream_id, lpn_itr);
+						domains[stream_id]->GlobalMappingTable[lpn_itr].TimeStamp = CurrentTimeStamp;
+						domains[stream_id]->CMT->Make_clean(stream_id, lpn_itr);
 					} else {
 						page_status_type bitlocation = (((page_status_type)0x1) << (((lpn_itr - startLPN) * GTD_entry_size) / SECTOR_SIZE_IN_BYTE));
 						if ((readSectorsBitmap & bitlocation) == 0) {
@@ -1873,23 +1808,21 @@ namespace SSD_Components
 		}
 		domains[stream_id]->Locked_LPAs.erase(itr);
 
-		//If there are read requests waiting behind the barrier, then MQSim assumes they can be serviced with the actual page data that is accessed during GC execution
+		//Resume blocked host/cache transactions against the mapping installed by GC.
+		//Their normal completion path owns request notification and transaction deletion.
+		std::list<NVM_Transaction*> resumed_transactions;
 		auto read_tr = domains[stream_id]->Read_transactions_behind_LPA_barrier.find(lpa);
-		while (read_tr != domains[stream_id]->Read_transactions_behind_LPA_barrier.end()) {
-			handle_transaction_serviced_signal_from_PHY((*read_tr).second);
-			delete (*read_tr).second;
-			domains[stream_id]->Read_transactions_behind_LPA_barrier.erase(read_tr);
-			read_tr = domains[stream_id]->Read_transactions_behind_LPA_barrier.find(lpa);
+		while (read_tr != domains[stream_id]->Read_transactions_behind_LPA_barrier.end() && read_tr->first == lpa) {
+			resumed_transactions.push_back(read_tr->second);
+			read_tr = domains[stream_id]->Read_transactions_behind_LPA_barrier.erase(read_tr);
 		}
 
-		//If there are write requests waiting behind the barrier, then MQSim assumes they can be serviced with the actual page data that is accessed during GC execution. This may not be 100% true for all write requests, but, to avoid more complexity in the simulation, we accept this assumption.
 		auto write_tr = domains[stream_id]->Write_transactions_behind_LPA_barrier.find(lpa);
-		while (write_tr != domains[stream_id]->Write_transactions_behind_LPA_barrier.end()) {
-			handle_transaction_serviced_signal_from_PHY((*write_tr).second);
-			delete (*write_tr).second;
-			domains[stream_id]->Write_transactions_behind_LPA_barrier.erase(write_tr);
-			write_tr = domains[stream_id]->Write_transactions_behind_LPA_barrier.find(lpa);
+		while (write_tr != domains[stream_id]->Write_transactions_behind_LPA_barrier.end() && write_tr->first == lpa) {
+			resumed_transactions.push_back(write_tr->second);
+			write_tr = domains[stream_id]->Write_transactions_behind_LPA_barrier.erase(write_tr);
 		}
+		Translate_lpa_to_ppa_and_dispatch(resumed_transactions);
 	}
 
 	inline void Address_Mapping_Unit_Page_Level::Remove_barrier_for_accessing_mvpn(stream_id_type stream_id, MVPN_type mvpn)
@@ -1931,6 +1864,9 @@ namespace SSD_Components
 			for (LPA_type lpn_itr = start_lpn; lpn_itr <= end_lpn; lpn_itr++) {
 				if (domains[stream_id]->CMT->Exists(stream_id, lpn_itr)) {
 					if (domains[stream_id]->CMT->Is_dirty(stream_id, lpn_itr)) {
+						domains[stream_id]->GlobalMappingTable[lpn_itr].PPA = domains[stream_id]->CMT->Retrieve_ppa(stream_id, lpn_itr);
+						domains[stream_id]->GlobalMappingTable[lpn_itr].WrittenStateBitmap = domains[stream_id]->CMT->Get_bitmap_vector_of_written_sectors(stream_id, lpn_itr);
+						domains[stream_id]->GlobalMappingTable[lpn_itr].TimeStamp = CurrentTimeStamp;
 						domains[stream_id]->CMT->Make_clean(stream_id, lpn_itr);
 					} else {
 						page_status_type bitlocation = (((page_status_type)0x1) << (((lpn_itr - start_lpn) * GTD_entry_size) / SECTOR_SIZE_IN_BYTE));
@@ -1987,20 +1923,10 @@ namespace SSD_Components
 	{
 		std::set<NVM_Transaction_Flash_WR*>& waiting_write_list = Write_transactions_for_overfull_planes[plane_address.ChannelID][plane_address.ChipID][plane_address.DieID][plane_address.PlaneID];
 
-		ftl->TSU->Prepare_for_transaction_submit();
-		auto program = waiting_write_list.begin();
-		while (program != waiting_write_list.end()) {
-			if (translate_lpa_to_ppa((*program)->Stream_id, *program)) {
-				ftl->TSU->Submit_transaction(*program);
-				if ((*program)->RelatedRead != NULL) {
-					ftl->TSU->Submit_transaction((*program)->RelatedRead);
-				}
-				waiting_write_list.erase(program++);
-			}
-			else {
-				break;
-			}
-		}
-		ftl->TSU->Schedule();
+		//Waiting for GC can outlive the CMT entry. Re-enter translation and detach
+		//the batch first, since requests still short of space may queue here again.
+		std::list<NVM_Transaction*> resumed_transactions(waiting_write_list.begin(), waiting_write_list.end());
+		waiting_write_list.clear();
+		Translate_lpa_to_ppa_and_dispatch(resumed_transactions);
 	}
 }
