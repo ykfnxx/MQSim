@@ -301,12 +301,22 @@ namespace SSD_Components
 				for (unsigned int die = 0; die < die_no_per_chip; ++die) {
 					for (unsigned int plane = 0; plane < plane_no_per_die; ++plane) {
 						const PlaneBookKeepingType& plane_entry = plane_manager[channel][chip][die][plane];
-						if (!plane_entry.Ongoing_erase_operations.empty()) return false;
 						for (unsigned int block = 0; block < block_no_per_plane; ++block) {
 							const Block_Pool_Slot_Type& block_entry = plane_entry.Blocks[block];
 							if (block_entry.Has_ongoing_gc_wl || block_entry.Ongoing_user_read_count != 0 ||
-								block_entry.Ongoing_user_program_count != 0 || block_entry.Erase_transaction != NULL) return false;
+								block_entry.Ongoing_user_program_count != 0 || block_entry.Erase_transaction != NULL ||
+								plane_entry.Ongoing_erase_operations.count(block) != 0) {
+								std::cerr << "Pending block-manager work: channel=" << channel << " chip=" << chip
+									<< " die=" << die << " plane=" << plane << " block=" << block
+									<< " stream=" << static_cast<unsigned int>(block_entry.Stream_id) << " gc_wl=" << block_entry.Has_ongoing_gc_wl
+									<< " reads=" << block_entry.Ongoing_user_read_count << " programs=" << block_entry.Ongoing_user_program_count
+									<< " erase_transaction=" << (block_entry.Erase_transaction != NULL)
+									<< " queued_erases=" << plane_entry.Ongoing_erase_operations.size()
+									<< " free_blocks=" << plane_entry.Free_block_pool.size() << std::endl;
+								return false;
+							}
 						}
+						if (!plane_entry.Ongoing_erase_operations.empty()) return false;
 					}
 				}
 			}

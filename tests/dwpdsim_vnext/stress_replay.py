@@ -29,6 +29,8 @@ def run_case(
     dies=1,
     planes=1,
     seed=321,
+    static_wl=None,
+    channels=2,
 ):
     directory = base / f"{scheduler}-{name}"
     directory.mkdir(parents=True, exist_ok=True)
@@ -40,10 +42,26 @@ def run_case(
         "Die_No_Per_Chip": dies,
         "Plane_No_Per_Die": planes,
         "Measurement_End_Time_Ns": 10**15,
+        "Flash_Channel_Count": channels,
     }.items():
         config.find(".//" + key).text = str(value)
     for limit in config.findall(".//Block_PE_Cycles_Limit"):
         limit.text = "1000000"
+    if channels != 2:
+        for pool in config.findall(".//Flash_Pool_Parameter_Set"):
+            pool.find("Channel_IDs").text = (
+                str(channels - 1)
+                if pool.findtext("Pool_ID") == "slc"
+                else ",".join(str(i) for i in range(channels - 1))
+            )
+    if static_wl is not None:
+        for key, value in {
+            "Ideal_Mapping_Table": "true",
+            "Dynamic_Wearleveling_Enabled": "true",
+            "Static_Wearleveling_Enabled": str(static_wl).lower(),
+            "Static_Wearleveling_Threshold": "1",
+        }.items():
+            config.find(".//" + key).text = value
     config.write(directory / "ssd.xml")
     workload = ET.parse(FIXTURE / "workload.xml")
     scenario = workload.find("IO_Scenario")
@@ -77,6 +95,8 @@ def run_case(
             else rng.randrange(pages)
         )
         operation, offset, sectors = 0, 0, 16
+        if pattern == "hot" and local_index >= pages:
+            page = 32 + local_index % 32
         if local_index >= pages:
             if pattern in ("mixed", "trim", "partial"):
                 operation = rng.choices(
@@ -117,6 +137,8 @@ def run_case(
         "dies": dies,
         "planes": planes,
         "seed": seed,
+        "static_wl": static_wl,
+        "channels": channels,
         "expected": expected,
         "expected_effective_trim_sectors": effective_trim_sectors,
     }
@@ -168,6 +190,11 @@ def run_case(
                     )
         ftl = root.find(".//SSDDevice.FTL")
         record["gc_count"] = int(ftl.get("GC_Execution_Count"))
+        record["wl_count"] = int(ftl.get("Total_WL_Executions"))
+        if static_wl is False and record["wl_count"] != 0:
+            record["errors"].append("static wear leveling ran while disabled")
+        if static_wl is True and count >= 1000 and record["wl_count"] == 0:
+            record["errors"].append("static wear leveling was not exercised")
         record["gc_page_programs"] = int(ftl.get("GC_Page_Program_Count"))
         record["effective_trim_sectors"] = int(
             ftl.get("Effective_Trimmed_Sector_Count")
@@ -193,9 +220,7 @@ def run_case(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--output", type=Path, default=REPO / "build/io-stress-run"
-    )
+    parser.add_argument("--output", type=Path, default=REPO / "build/io-stress-run")
     parser.add_argument("--binary", type=Path, default=REPO / "MQSim")
     parser.add_argument("--count", type=int, default=50000)
     parser.add_argument("--filter", default="")
@@ -217,6 +242,12 @@ def main():
         ("four-partitioned", {"flows": 4, "cmt": 256, "sharing": "EQUAL_PARTITIONING"}),
         ("multi-die-plane", {"dies": 2, "planes": 2}),
         ("burst-trim", {"pattern": "trim", "interval": 1000, "cmt": 256}),
+        ("static-wl-on", {"pattern": "hot", "flows": 2, "static_wl": True}),
+        ("static-wl-off", {"pattern": "hot", "flows": 2, "static_wl": False}),
+        (
+            "static-wl-multi-channel",
+            {"pattern": "hot", "static_wl": True, "channels": 16},
+        ),
     ]
     results = []
     for scheduler in ("OUT_OF_ORDER", "PRIORITY_OUT_OF_ORDER"):
