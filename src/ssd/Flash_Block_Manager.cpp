@@ -19,7 +19,7 @@ namespace SSD_Components
 	{
 	}
 
-	void Flash_Block_Manager::Allocate_block_and_page_in_plane_for_user_write(const stream_id_type stream_id, NVM::FlashMemory::Physical_Page_Address& page_address)
+	void Flash_Block_Manager::Allocate_block_and_page_in_plane_for_user_write(const stream_id_type stream_id, NVM::FlashMemory::Physical_Page_Address& page_address, bool issue_program)
 	{
 		PlaneBookKeepingType *plane_record = &plane_manager[page_address.ChannelID][page_address.ChipID][page_address.DieID][page_address.PlaneID];
 		const bool allocated_frontier = plane_record->Data_wf[stream_id] == NULL;
@@ -28,7 +28,12 @@ namespace SSD_Components
 		plane_record->Free_pages_count--;		
 		page_address.BlockID = plane_record->Data_wf[stream_id]->BlockID;
 		page_address.PageID = plane_record->Data_wf[stream_id]->Current_page_write_index++;
-		program_transaction_issued(page_address);
+		//Online initialization for an unmapped read allocates data without a NAND program.
+		if (issue_program) {
+			program_transaction_issued(page_address);
+		} else {
+			plane_record->Data_wf[stream_id]->Last_write_time = Simulator->Time();
+		}
 
 		//The current write frontier block is written to the end
 		if(plane_record->Data_wf[stream_id]->Current_page_write_index == pages_no_per_block) {

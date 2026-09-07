@@ -155,14 +155,15 @@ mixed read/write cases additionally exercise GC page relocation and resumption o
 requests blocked by GC, checking that all host requests complete and GC state drains.
 
 The integration suite also runs a 1000-I/O version of the multi-flow stress matrix.
-For the full 28-case matrix (50,000 I/O per case), run:
+For the full 32-case matrix (50,000 I/O per case), run:
 
 ```bash
 python3 tests/dwpdsim_vnext/stress_replay.py --count 50000 --output build/io-stress-run
 ```
 
 The matrix covers shared/partitioned CMTs, both TSU schedulers, burst arrivals,
-partial-page I/O, TRIM, and static wear leveling on/off with hot/cold pages and
+partial-page I/O, first reads of unmapped pages, read/TRIM/write cycles, and
+static wear leveling on/off with hot/cold pages and
 multiple channels. Wear-leveling cases check that the configured switch takes effect.
 Same-page requests have completion dependencies, and
 effective TRIM sectors are checked against an independent bitmap model. The runner

@@ -105,8 +105,19 @@ def run_case(
             if pattern == "partial":
                 sectors = 8
                 offset = 8 * rng.randrange(2)
+        if pattern == "unmapped-read":
+            operation = 1
+        elif pattern == "read-trim-write":
+            operation = (
+                1 if local_index < pages else rng.choices([0, 1, 2], [30, 40, 30])[0]
+            )
         mask = ((1 << sectors) - 1) << offset
-        if operation == 1 and state[stream][page] & mask != mask:
+        if operation == 1 and pattern in ("unmapped-read", "read-trim-write"):
+            # MQSim initializes an unmapped page on its first read, without
+            # issuing a NAND program. Reflect that existing model in the oracle.
+            if state[stream][page] == 0:
+                state[stream][page] = mask
+        elif operation == 1 and state[stream][page] & mask != mask:
             operation = 0
         if operation == 0:
             state[stream][page] |= mask
@@ -196,6 +207,12 @@ def run_case(
         if static_wl is True and count >= 1000 and record["wl_count"] == 0:
             record["errors"].append("static wear leveling was not exercised")
         record["gc_page_programs"] = int(ftl.get("GC_Page_Program_Count"))
+        # This single-plane read-only case may write mapping pages, but
+        # online data initialization must not issue a NAND program.
+        if pattern == "unmapped-read" and int(
+            ftl.get("Issued_Flash_Program_CMD")
+        ) != int(ftl.get("Issued_Flash_Program_CMD_For_Mapping")):
+            record["errors"].append("unmapped reads issued data-page programs")
         record["effective_trim_sectors"] = int(
             ftl.get("Effective_Trimmed_Sector_Count")
         )
@@ -235,6 +252,8 @@ def main():
         ("random-write", {"pattern": "random"}),
         ("mixed", {}),
         ("partial", {"pattern": "partial"}),
+        ("unmapped-read", {"pattern": "unmapped-read"}),
+        ("read-trim-write", {"pattern": "read-trim-write"}),
         ("trim", {"pattern": "trim"}),
         ("burst", {"interval": 1000, "cmt": 256}),
         ("two-pools", {"flows": 2, "cmt": 256}),

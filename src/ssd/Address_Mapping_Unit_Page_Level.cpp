@@ -1409,7 +1409,9 @@ namespace SSD_Components
 				PRINT_ERROR("Unknown plane allocation scheme type!")
 		}
 
-		block_manager->Allocate_block_and_page_in_plane_for_user_write(stream_id, read_address);
+		block_manager->Allocate_block_and_page_in_plane_for_user_write(stream_id, read_address, false);
+		//Keep the initialized page discoverable when GC later reads its metadata.
+		flash_controller->Change_flash_page_status_for_preconditioning(read_address, lpa);
 		PPA_type ppa = Convert_address_to_ppa(read_address);
 		domain->Update_mapping_info(ideal_mapping_table, stream_id, lpa, ppa, read_sectors_bitmap);
 
