@@ -70,7 +70,15 @@ def run_case(
         scenario.remove(flow)
     trace_handles = []
     expected = [
-        {"requests": 0, "read_bytes": 0, "write_bytes": 0, "trim_bytes": 0}
+        {
+            "requests": 0,
+            "reads": 0,
+            "writes": 0,
+            "trims": 0,
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "trim_bytes": 0,
+        }
         for _ in range(flows)
     ]
     pages = 128 // ((flows + 1) // 2)
@@ -126,6 +134,7 @@ def run_case(
             state[stream][page] &= ~mask
         e = expected[stream]
         e["requests"] += 1
+        e[{0: "writes", 1: "reads", 2: "trims"}[operation]] += 1
         e[{0: "write_bytes", 1: "read_bytes", 2: "trim_bytes"}[operation]] += (
             sectors * 512
         )
@@ -190,6 +199,9 @@ def run_case(
             for tag, key in [
                 ("Generated_Request_Count", "requests"),
                 ("Completed_Request_Count", "requests"),
+                ("Read_Request_Count", "reads"),
+                ("Write_Request_Count", "writes"),
+                ("Trim_Request_Count", "trims"),
                 ("Bytes_Transferred_Write", "write_bytes"),
                 ("Bytes_Transferred_Read", "read_bytes"),
                 ("Bytes_Trimmed_Requested", "trim_bytes"),
@@ -198,6 +210,51 @@ def run_case(
                 if value != expected[stream][key]:
                     record["errors"].append(
                         f"flow {stream} {tag}: {value} != {expected[stream][key]}"
+                    )
+        for pool in root.findall(".//SSDDevice.Pool"):
+            pool_id = pool.get("ID")
+            pool_channels = [
+                channel
+                for channel in root.findall(".//SSDDevice.Channel")
+                if channel.get("Pool_ID") == pool_id
+            ]
+            pool_flows = [
+                flow
+                for flow in root.findall("Host/Host.IO_Flow")
+                if flow.findtext("Pool_ID") == pool_id
+            ]
+            for pool_field, flow_field in (
+                ("Host_Read_Bytes", "Bytes_Transferred_Read"),
+                ("Host_Write_Bytes", "Bytes_Transferred_Write"),
+                ("Requested_Trim_Bytes", "Bytes_Trimmed_Requested"),
+                ("Measurement_Host_Write_Bytes", "Measurement_Host_Write_Bytes"),
+            ):
+                flow_total = sum(int(flow.findtext(flow_field)) for flow in pool_flows)
+                if int(pool.get(pool_field)) != flow_total:
+                    record["errors"].append(
+                        f"pool {pool_id} {pool_field} differs from flows"
+                    )
+            for field in (
+                "Host_Read_Bytes",
+                "Host_Write_Bytes",
+                "Requested_Trim_Bytes",
+                "Effective_Trimmed_Bytes",
+                "Requested_Trim_Sector_Count",
+                "Effective_Trimmed_Sector_Count",
+                "Flash_Read_Command_Count",
+                "Flash_Program_Command_Count",
+                "Flash_Erase_Command_Count",
+                "Total_Block_Erase_Count",
+                "Measurement_Total_Block_Erase_Count",
+                "Measurement_Flash_Programmed_Bytes",
+                "Physical_Capacity_Bytes",
+            ):
+                channel_total = sum(
+                    int(channel.get(field)) for channel in pool_channels
+                )
+                if int(pool.get(field)) != channel_total:
+                    record["errors"].append(
+                        f"pool {pool_id} {field}: {pool.get(field)} != channels {channel_total}"
                     )
         ftl = root.find(".//SSDDevice.FTL")
         record["gc_count"] = int(ftl.get("GC_Execution_Count"))

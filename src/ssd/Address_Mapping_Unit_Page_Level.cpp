@@ -493,13 +493,6 @@ namespace SSD_Components
 				it != transactionList.end(); it++) {
 				if (((NVM_Transaction_Flash*)(*it))->Physical_address_determined) {
 					NVM_Transaction_Flash* flash_transaction = static_cast<NVM_Transaction_Flash*>(*it);
-					if (flash_transaction->Source == Transaction_Source_Type::USERIO && flash_transaction->UserIORequest != NULL) {
-						if (flash_transaction->Type == Transaction_Type::READ && flash_transaction->UserIORequest->Type == UserRequestType::READ) {
-							Stats::Channel_host_read_bytes[flash_transaction->Address.ChannelID] += flash_transaction->Data_and_metadata_size_in_byte;
-						} else if (flash_transaction->Type == Transaction_Type::WRITE && flash_transaction->UserIORequest->Type == UserRequestType::WRITE) {
-							Stats::Channel_host_write_bytes[flash_transaction->Address.ChannelID] += flash_transaction->Data_and_metadata_size_in_byte;
-						}
-					}
 					ftl->TSU->Submit_transaction(flash_transaction);
 					if (((NVM_Transaction_Flash*)(*it))->Type == Transaction_Type::WRITE) {
 						if (((NVM_Transaction_Flash_WR*)(*it))->RelatedRead != NULL) {
@@ -530,12 +523,18 @@ namespace SSD_Components
 		page_status_type page_status = mapping_entry_accessible ? domain->Get_page_status(ideal_mapping_table, stream_id, lpa) : domain->GlobalMappingTable[lpa].WrittenStateBitmap;
 		page_status_type trimmed_sectors = page_status & sector_bitmap;
 
+		NVM::FlashMemory::Physical_Page_Address trim_address;
+		if (ppa == NO_PPA) {
+			//Requested TRIM bytes include unmapped ranges; derive their channel
+			//from logical placement without allocating a physical page.
+			allocate_plane_for_preconditioning(stream_id, lpa, trim_address);
+		} else {
+			Convert_ppa_to_address(ppa, trim_address);
+		}
+		Stats::Channel_requested_trim_sectors[trim_address.ChannelID] += count_sector_no_from_status_bitmap(sector_bitmap);
 		if (ppa == NO_PPA || trimmed_sectors == UNWRITTEN_LOGICAL_PAGE) {
 			return;
 		}
-		NVM::FlashMemory::Physical_Page_Address trim_address;
-		Convert_ppa_to_address(ppa, trim_address);
-		Stats::Channel_requested_trim_sectors[trim_address.ChannelID] += count_sector_no_from_status_bitmap(sector_bitmap);
 		Stats::Channel_effective_trimmed_sectors[trim_address.ChannelID] += count_sector_no_from_status_bitmap(trimmed_sectors);
 
 		page_status_type remaining_sectors = page_status & ~sector_bitmap;
@@ -650,9 +649,6 @@ namespace SSD_Components
 			transaction->PPA = ppa;
 			Convert_ppa_to_address(transaction->PPA, transaction->Address);
 			block_manager->Read_transaction_issued(transaction->Address);
-			transaction->Physical_address_determined = true;
-			
-			return true;
 		} else {//This is a write transaction
 			allocate_plane_for_user_write((NVM_Transaction_Flash_WR*)transaction);
 			//there are too few free pages remaining only for GC
@@ -660,10 +656,18 @@ namespace SSD_Components
 				return false;
 			}
 			allocate_page_in_plane_for_user_write((NVM_Transaction_Flash_WR*)transaction, false);
-			transaction->Physical_address_determined = true;
-			
-			return true;
 		}
+		transaction->Physical_address_determined = true;
+		//Both immediate translation and requests resumed after a CMT miss pass here.
+		//Count only successful host data translations, excluding update reads and GC.
+		if (transaction->Source == Transaction_Source_Type::USERIO && transaction->UserIORequest != NULL) {
+			if (transaction->Type == Transaction_Type::READ && transaction->UserIORequest->Type == UserRequestType::READ) {
+				Stats::Channel_host_read_bytes[transaction->Address.ChannelID] += transaction->Data_and_metadata_size_in_byte;
+			} else if (transaction->Type == Transaction_Type::WRITE && transaction->UserIORequest->Type == UserRequestType::WRITE) {
+				Stats::Channel_host_write_bytes[transaction->Address.ChannelID] += transaction->Data_and_metadata_size_in_byte;
+			}
+		}
+		return true;
 	}
 	
 	void Address_Mapping_Unit_Page_Level::Allocate_address_for_preconditioning(const stream_id_type stream_id, std::map<LPA_type, page_status_type>& lpa_list, std::vector<double>& steady_state_distribution)

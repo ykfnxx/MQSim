@@ -167,6 +167,8 @@ static wear leveling on/off with hot/cold pages and
 multiple channels. Wear-leveling cases check that the configured switch takes effect.
 Same-page requests have completion dependencies, and
 effective TRIM sectors are checked against an independent bitmap model. The runner
+also reconciles request counts and host bytes across flows, pools, and channels,
+and checks additive pool/channel NAND, erase, and measurement statistics. It
 retains XML configurations, traces, logs, and JSON summaries under the output path,
 and exits nonzero on replay or statistics failures. Use `--seed` to vary the workload
 and `--binary` to test a separate build, including an AddressSanitizer build.
