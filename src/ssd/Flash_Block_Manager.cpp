@@ -22,6 +22,7 @@ namespace SSD_Components
 	void Flash_Block_Manager::Allocate_block_and_page_in_plane_for_user_write(const stream_id_type stream_id, NVM::FlashMemory::Physical_Page_Address& page_address)
 	{
 		PlaneBookKeepingType *plane_record = &plane_manager[page_address.ChannelID][page_address.ChipID][page_address.DieID][page_address.PlaneID];
+		const bool allocated_frontier = plane_record->Data_wf[stream_id] == NULL;
 		if (plane_record->Data_wf[stream_id] == NULL) plane_record->Data_wf[stream_id] = plane_record->Get_a_free_block(stream_id, false);
 		plane_record->Valid_pages_count++;
 		plane_record->Free_pages_count--;		
@@ -33,6 +34,9 @@ namespace SSD_Components
 		if(plane_record->Data_wf[stream_id]->Current_page_write_index == pages_no_per_block) {
 			//Assign a new write frontier block
 			plane_record->Data_wf[stream_id] = NULL;
+		}
+		//Allocating a frontier can cross the GC threshold before the block is full.
+		if (allocated_frontier || plane_record->Data_wf[stream_id] == NULL) {
 			gc_and_wl_unit->Check_gc_required(plane_record->Get_free_block_pool_size(), page_address);
 		}
 
@@ -97,6 +101,7 @@ namespace SSD_Components
 	void Flash_Block_Manager::Allocate_block_and_page_in_plane_for_translation_write(const stream_id_type streamID, NVM::FlashMemory::Physical_Page_Address& page_address, bool is_for_gc)
 	{
 		PlaneBookKeepingType *plane_record = &plane_manager[page_address.ChannelID][page_address.ChipID][page_address.DieID][page_address.PlaneID];
+		const bool allocated_frontier = plane_record->Translation_wf[streamID] == NULL;
 		if (plane_record->Translation_wf[streamID] == NULL) plane_record->Translation_wf[streamID] = plane_record->Get_a_free_block(streamID, true);
 		plane_record->Valid_pages_count++;
 		plane_record->Free_pages_count--;
@@ -108,9 +113,9 @@ namespace SSD_Components
 		if (plane_record->Translation_wf[streamID]->Current_page_write_index == pages_no_per_block) {
 			//Assign a new write frontier block
 			plane_record->Translation_wf[streamID] = NULL;
-			if (!is_for_gc) {
-				gc_and_wl_unit->Check_gc_required(plane_record->Get_free_block_pool_size(), page_address);
-			}
+		}
+		if (!is_for_gc && (allocated_frontier || plane_record->Translation_wf[streamID] == NULL)) {
+			gc_and_wl_unit->Check_gc_required(plane_record->Get_free_block_pool_size(), page_address);
 		}
 		plane_record->Check_bookkeeping_correctness(page_address);
 	}

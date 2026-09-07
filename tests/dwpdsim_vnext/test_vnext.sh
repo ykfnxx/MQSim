@@ -216,3 +216,5 @@ with tempfile.TemporaryDirectory(prefix="mqsim-vnext-") as temporary:
 
 print("DWPDSim vNext dependency, pool, statistics, validation, empty-flow, and NVMe LBA tests passed")
 PY
+
+MQSIM_BINARY="${binary}" python3 tests/dwpdsim_vnext/test_tsu_drain.py

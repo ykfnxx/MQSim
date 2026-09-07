@@ -215,9 +215,10 @@ namespace SSD_Components
 			Owns_CMT = false;
 		}
 
-		Total_translation_pages_no = MVPN_type(Total_logical_pages_no / Translation_entries_per_page);
-		GlobalTranslationDirectory = new GTDEntryType[Total_translation_pages_no + 1];
-		for (MVPN_type i = 0; i <= Total_translation_pages_no; i++) {
+		Total_translation_pages_no = MVPN_type(Total_logical_pages_no / Translation_entries_per_page
+			+ (Total_logical_pages_no % Translation_entries_per_page != 0));
+		GlobalTranslationDirectory = new GTDEntryType[Total_translation_pages_no];
+		for (MVPN_type i = 0; i < Total_translation_pages_no; i++) {
 			GlobalTranslationDirectory[i].MPPN = (MPPN_type)NO_MPPN;
 			GlobalTranslationDirectory[i].TimeStamp = INVALID_TIME_STAMP;
 		}
@@ -1670,6 +1671,9 @@ namespace SSD_Components
 
 			NVM_Transaction_Flash_WR* writeTR = new NVM_Transaction_Flash_WR(Transaction_Source_Type::MAPPING, stream_id, SECTOR_SIZE_IN_BYTE * sector_no_per_page,
 				mvpn, mppn, NULL, mvpn, readTR, (((page_status_type)0x1) << sector_no_per_page) - 1, CurrentTimeStamp);
+			if (readTR != NULL) {
+				readTR->RelatedWrite = writeTR;
+			}
 			allocate_plane_for_translation_write(writeTR);
 			allocate_page_in_plane_for_translation_write(writeTR, mvpn, false);
 			domains[stream_id]->DepartingMappingEntries.insert(get_MVPN(lpn, stream_id));

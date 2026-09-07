@@ -489,8 +489,13 @@ bool TSU_Priority_OutOfOrder::service_write_transaction(NVM::FlashMemory::Flash_
 {
     Flash_Transaction_Queue *sourceQueue1 = NULL, *sourceQueue2 = NULL;
 
+    //Mapping writebacks must progress even when no user or GC writes are queued.
+    if (!MappingWriteTRQueue[chip->ChannelID][chip->ChipID].empty())
+    {
+        sourceQueue1 = &MappingWriteTRQueue[chip->ChannelID][chip->ChipID];
+    }
     //If flash transactions related to GC are prioritzed (non-preemptive execution mode of GC), then GC queues are checked first
-    if (ftl->GC_and_WL_Unit->GC_is_in_urgent_mode(chip))
+    else if (ftl->GC_and_WL_Unit->GC_is_in_urgent_mode(chip))
     {
         if (GCWriteTRQueue[chip->ChannelID][chip->ChipID].size() > 0)
         {

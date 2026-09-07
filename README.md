@@ -146,6 +146,12 @@ TRIM is modeled as an FTL control operation rather than a flash transaction. It 
 
 For a DWPDSim CSV adapter, convert `offset_bytes` and `length_bytes` to 512-byte sectors and emit request type `2` for an invalidation/trim record. The included `tests/trim/test_trim.sh` workload covers partial-page trim, full-page invalidation, repeated trim, and rewriting a trimmed LBA.
 
+Run `bash tests/dwpdsim_vnext/test_vnext.sh` for the DWPDSim integration regressions.
+This includes 4096-request mapping-cache eviction replays for both TSU schedulers,
+with and without GC pressure. The replays verify request completion and queue drain,
+including mapping writebacks and their read-before-write dependencies. Run this part
+alone with `python3 tests/dwpdsim_vnext/test_tsu_drain.py`.
+
 The following parameters are used to define a trace-based workload:
 1. **Priority_Class:** the priority class of the I/O queue associated with this I/O request. Range = {URGENT, HIGH, MEDIUM, LOW}.
 2. **Device_Level_Data_Caching_Mode:** the type of on-device data caching for this flow. Range={WRITE_CACHE, READ_CACHE, WRITE_READ_CACHE, TURNED_OFF}. If the caching mechanism mentioned above is set to SIMPLE, then only WRITE_CACHE and TURNED_OFF modes could be used.
