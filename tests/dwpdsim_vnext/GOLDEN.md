@@ -73,3 +73,12 @@ frontier has 15 writable pages. The oracle requires all writes and exact bytes
 to complete, mapping programs to occur, and TSU queues to drain. The fix permits
 use of the requesting stream's existing frontier; allocating a new frontier
 still obeys the GC reserve.
+
+`test_waiting_cmt.py` exercises six/eight flows sharing a 64-byte CMT with
+8,192 pages per flow and 100,000 burst I/Os under both schedulers. Before the
+fix, the six-flow seed-321 case ended with three unmapped writes on stream 3
+and one on stream 5: an evicted WAITING reservation made the mapping-completion
+callback skip its waiters and delete the arriving record. The regression
+requires exact host accounting, real mapping I/O and full drain. Completion
+now recreates missing reservations for actual waiters, preserving an already
+valid mapping if present; merge-only reads do not populate the cache.

@@ -1711,12 +1711,24 @@ namespace SSD_Components
 				if ((*it).first == mvpn) {
 					LPA_type lpa = (*it).second;
 
-					//This mapping entry may arrived due to an update read request that is required for merging new and old mapping entries.
-					//If that is the case, we should not insert it into CMT
-					if (_my_instance->domains[transaction->Stream_id]->CMT->Is_slot_reserved_for_lpn_and_waiting(transaction->Stream_id, lpa)) {
-						_my_instance->domains[transaction->Stream_id]->CMT->Insert_new_mapping_info(transaction->Stream_id, lpa,
-							_my_instance->domains[transaction->Stream_id]->GlobalMappingTable[lpa].PPA,
-							_my_instance->domains[transaction->Stream_id]->GlobalMappingTable[lpa].WrittenStateBitmap);
+					AddressMappingDomain* domain = _my_instance->domains[transaction->Stream_id];
+					const bool waiting_slot = domain->CMT->Is_slot_reserved_for_lpn_and_waiting(transaction->Stream_id, lpa);
+					const bool waiting_requests = domain->Waiting_unmapped_read_transactions.count(lpa) != 0 ||
+						domain->Waiting_unmapped_program_transactions.count(lpa) != 0;
+					//A shared CMT can evict a WAITING reservation before its mapping
+					//read completes. The actual waiters must still be resumed. Reads
+					//used only to merge a mapping writeback need no CMT insertion.
+					if (waiting_slot || waiting_requests) {
+						if (!domain->CMT->Exists(transaction->Stream_id, lpa)) {
+							if (!waiting_slot) {
+								if (!domain->CMT->Check_free_slot_availability()) {
+									_my_instance->evict_cmt_entry(transaction->Stream_id);
+								}
+								domain->CMT->Reserve_slot_for_lpn(transaction->Stream_id, lpa);
+							}
+							domain->CMT->Insert_new_mapping_info(transaction->Stream_id, lpa,
+								domain->GlobalMappingTable[lpa].PPA, domain->GlobalMappingTable[lpa].WrittenStateBitmap);
+						}
 						auto it2 = _my_instance->domains[transaction->Stream_id]->Waiting_unmapped_read_transactions.find(lpa);
 						while (it2 != _my_instance->domains[transaction->Stream_id]->Waiting_unmapped_read_transactions.end() &&
 							(*it2).first == lpa) {
