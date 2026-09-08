@@ -1,6 +1,7 @@
 #include <cmath>
 #include <assert.h>
 #include <stdexcept>
+#include <iostream>
 
 #include "Address_Mapping_Unit_Page_Level.h"
 #include "Stats.h"
@@ -418,20 +419,36 @@ namespace SSD_Components
 
 	bool Address_Mapping_Unit_Page_Level::Is_drained() const
 	{
+		bool drained = true;
 		for (unsigned int stream = 0; stream < no_of_input_streams; ++stream) {
 			const AddressMappingDomain* domain = domains[stream];
-			if (!domain->Waiting_unmapped_read_transactions.empty() || !domain->Waiting_unmapped_program_transactions.empty() ||
-				!domain->ArrivingMappingEntries.empty() || !domain->DepartingMappingEntries.empty() ||
-				!domain->Locked_LPAs.empty() || !domain->Locked_MVPNs.empty() ||
-				!domain->Read_transactions_behind_LPA_barrier.empty() || !domain->Write_transactions_behind_LPA_barrier.empty() ||
-				!domain->MVPN_read_transactions_waiting_behind_barrier.empty() || !domain->MVPN_write_transaction_waiting_behind_barrier.empty()) return false;
+			const auto report = [&](const char* name, size_t count) {
+				if (count == 0) return;
+				drained = false;
+				std::cerr << "AMU pending: stream=" << stream << " " << name << "=" << count << std::endl;
+			};
+			report("Waiting_unmapped_read_transactions", domain->Waiting_unmapped_read_transactions.size());
+			report("Waiting_unmapped_program_transactions", domain->Waiting_unmapped_program_transactions.size());
+			report("ArrivingMappingEntries", domain->ArrivingMappingEntries.size());
+			report("DepartingMappingEntries", domain->DepartingMappingEntries.size());
+			report("Locked_LPAs", domain->Locked_LPAs.size());
+			report("Locked_MVPNs", domain->Locked_MVPNs.size());
+			report("Read_transactions_behind_LPA_barrier", domain->Read_transactions_behind_LPA_barrier.size());
+			report("Write_transactions_behind_LPA_barrier", domain->Write_transactions_behind_LPA_barrier.size());
+			report("MVPN_read_transactions_waiting_behind_barrier", domain->MVPN_read_transactions_waiting_behind_barrier.size());
+			report("MVPN_write_transaction_waiting_behind_barrier", domain->MVPN_write_transaction_waiting_behind_barrier.size());
 		}
 		for (unsigned int channel = 0; channel < channel_count; ++channel)
 			for (unsigned int chip = 0; chip < chip_no_per_channel; ++chip)
 				for (unsigned int die = 0; die < die_no_per_chip; ++die)
 					for (unsigned int plane = 0; plane < plane_no_per_die; ++plane)
-						if (!Write_transactions_for_overfull_planes[channel][chip][die][plane].empty()) return false;
-		return true;
+						if (!Write_transactions_for_overfull_planes[channel][chip][die][plane].empty()) {
+							drained = false;
+							std::cerr << "AMU pending: channel=" << channel << " chip=" << chip
+								<< " die=" << die << " plane=" << plane << " Write_transactions_for_overfull_planes="
+								<< Write_transactions_for_overfull_planes[channel][chip][die][plane].size() << std::endl;
+						}
+		return drained;
 	}
 
 	void Address_Mapping_Unit_Page_Level::Store_mapping_table_on_flash_at_start()
@@ -651,8 +668,11 @@ namespace SSD_Components
 			block_manager->Read_transaction_issued(transaction->Address);
 		} else {//This is a write transaction
 			allocate_plane_for_user_write((NVM_Transaction_Flash_WR*)transaction);
-			//there are too few free pages remaining only for GC
-			if (ftl->GC_and_WL_Unit->Stop_servicing_writes(transaction->Address)){
+			//The reserve protects allocation of a new block, not unused pages
+			//in this stream's current frontier. Blocking those pages can leave
+			//writes waiting forever when there are no invalid pages for GC.
+			const Block_Pool_Slot_Type* frontier = block_manager->Get_plane_bookkeeping_entry(transaction->Address)->Data_wf[streamID];
+			if (frontier == NULL && ftl->GC_and_WL_Unit->Stop_servicing_writes(transaction->Address)) {
 				return false;
 			}
 			allocate_page_in_plane_for_user_write((NVM_Transaction_Flash_WR*)transaction, false);

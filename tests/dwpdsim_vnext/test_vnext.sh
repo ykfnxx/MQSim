@@ -218,5 +218,8 @@ print("DWPDSim vNext dependency, pool, statistics, validation, empty-flow, and N
 PY
 
 MQSIM_BINARY="${binary}" python3 tests/dwpdsim_vnext/test_tsu_drain.py
+python3 tests/dwpdsim_vnext/test_golden.py --binary "${binary}"
+python3 tests/dwpdsim_vnext/test_mapping_scale.py --binary "${binary}"
+python3 tests/dwpdsim_vnext/test_frontier_drain.py --binary "${binary}"
 python3 tests/dwpdsim_vnext/stress_replay.py --binary "${binary}" --count 1000 \
   --output build/vnext-stress-regression

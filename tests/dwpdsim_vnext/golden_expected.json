@@ -1,0 +1,396 @@
+{
+  "format_version": 1,
+  "provenance": {
+    "fixture": "tests/dwpdsim_vnext/ssdconfig.xml plus deterministic generated traces",
+    "seed": 321,
+    "note": "Semantic counters are trace-derived; isolated timing plus exact GC and wear-leveling values are compatibility goldens and require review before intentional refresh."
+  },
+  "cases": {
+    "gc_and_wear_leveling": {
+      "OUT_OF_ORDER-mixed": {
+        "GC_Execution_Count": 26,
+        "GC_Page_Program_Count": 137,
+        "GC_Page_Read_Count": 137,
+        "Issued_Flash_Erase_CMD": 26,
+        "Issued_Flash_Program_CMD": 610,
+        "Issued_Flash_Program_CMD_For_Mapping": 51,
+        "Issued_Flash_Read_CMD": 742,
+        "Total_WL_Executions": 0
+      },
+      "OUT_OF_ORDER-static-wl-multi-channel": {
+        "GC_Execution_Count": 11,
+        "GC_Page_Program_Count": 1132,
+        "GC_Page_Read_Count": 1132,
+        "Issued_Flash_Erase_CMD": 124,
+        "Issued_Flash_Program_CMD": 2132,
+        "Issued_Flash_Program_CMD_For_Mapping": 0,
+        "Issued_Flash_Read_CMD": 1132,
+        "Total_WL_Executions": 113
+      },
+      "OUT_OF_ORDER-static-wl-off": {
+        "GC_Execution_Count": 36,
+        "GC_Page_Program_Count": 0,
+        "GC_Page_Read_Count": 0,
+        "Issued_Flash_Erase_CMD": 36,
+        "Issued_Flash_Program_CMD": 1000,
+        "Issued_Flash_Program_CMD_For_Mapping": 0,
+        "Issued_Flash_Read_CMD": 0,
+        "Total_WL_Executions": 0
+      },
+      "OUT_OF_ORDER-static-wl-on": {
+        "GC_Execution_Count": 6,
+        "GC_Page_Program_Count": 761,
+        "GC_Page_Read_Count": 761,
+        "Issued_Flash_Erase_CMD": 84,
+        "Issued_Flash_Program_CMD": 1761,
+        "Issued_Flash_Program_CMD_For_Mapping": 0,
+        "Issued_Flash_Read_CMD": 761,
+        "Total_WL_Executions": 78
+      },
+      "PRIORITY_OUT_OF_ORDER-mixed": {
+        "GC_Execution_Count": 26,
+        "GC_Page_Program_Count": 137,
+        "GC_Page_Read_Count": 137,
+        "Issued_Flash_Erase_CMD": 26,
+        "Issued_Flash_Program_CMD": 610,
+        "Issued_Flash_Program_CMD_For_Mapping": 51,
+        "Issued_Flash_Read_CMD": 742,
+        "Total_WL_Executions": 0
+      },
+      "PRIORITY_OUT_OF_ORDER-static-wl-multi-channel": {
+        "GC_Execution_Count": 11,
+        "GC_Page_Program_Count": 1132,
+        "GC_Page_Read_Count": 1132,
+        "Issued_Flash_Erase_CMD": 124,
+        "Issued_Flash_Program_CMD": 2132,
+        "Issued_Flash_Program_CMD_For_Mapping": 0,
+        "Issued_Flash_Read_CMD": 1132,
+        "Total_WL_Executions": 113
+      },
+      "PRIORITY_OUT_OF_ORDER-static-wl-off": {
+        "GC_Execution_Count": 36,
+        "GC_Page_Program_Count": 0,
+        "GC_Page_Read_Count": 0,
+        "Issued_Flash_Erase_CMD": 36,
+        "Issued_Flash_Program_CMD": 1000,
+        "Issued_Flash_Program_CMD_For_Mapping": 0,
+        "Issued_Flash_Read_CMD": 0,
+        "Total_WL_Executions": 0
+      },
+      "PRIORITY_OUT_OF_ORDER-static-wl-on": {
+        "GC_Execution_Count": 6,
+        "GC_Page_Program_Count": 761,
+        "GC_Page_Read_Count": 761,
+        "Issued_Flash_Erase_CMD": 84,
+        "Issued_Flash_Program_CMD": 1761,
+        "Issued_Flash_Program_CMD_For_Mapping": 0,
+        "Issued_Flash_Read_CMD": 761,
+        "Total_WL_Executions": 78
+      }
+    },
+    "integration": {
+      "channels": [
+        {
+          "Effective_Trimmed_Bytes": 4096,
+          "Effective_Trimmed_Sector_Count": 8,
+          "Flash_Erase_Command_Count": 0,
+          "Flash_Program_Command_Count": 2,
+          "Flash_Read_Command_Count": 1,
+          "Host_Read_Bytes": 4096,
+          "Host_Write_Bytes": 8192,
+          "ID": 0,
+          "Logical_Capacity_Bytes": 1048576,
+          "Max_Block_Erase_Count": 0,
+          "Measurement_Flash_Programmed_Bytes": 16384,
+          "Measurement_Max_Block_Erase_Count": 0,
+          "Measurement_Total_Block_Erase_Count": 0,
+          "Media_Profile_ID": "slc_profile",
+          "PE_Cycle_Limit": 3,
+          "Physical_Capacity_Bytes": 2097152,
+          "Pool_ID": "slc",
+          "Requested_Trim_Bytes": 4096,
+          "Requested_Trim_Sector_Count": 8,
+          "Total_Block_Erase_Count": 0
+        },
+        {
+          "Effective_Trimmed_Bytes": 4096,
+          "Effective_Trimmed_Sector_Count": 8,
+          "Flash_Erase_Command_Count": 0,
+          "Flash_Program_Command_Count": 2,
+          "Flash_Read_Command_Count": 0,
+          "Host_Read_Bytes": 0,
+          "Host_Write_Bytes": 8192,
+          "ID": 1,
+          "Logical_Capacity_Bytes": 1048576,
+          "Max_Block_Erase_Count": 0,
+          "Measurement_Flash_Programmed_Bytes": 16384,
+          "Measurement_Max_Block_Erase_Count": 0,
+          "Measurement_Total_Block_Erase_Count": 0,
+          "Media_Profile_ID": "tlc_profile",
+          "PE_Cycle_Limit": 7,
+          "Physical_Capacity_Bytes": 2097152,
+          "Pool_ID": "tlc",
+          "Requested_Trim_Bytes": 4096,
+          "Requested_Trim_Sector_Count": 8,
+          "Total_Block_Erase_Count": 0
+        }
+      ],
+      "completions": [
+        {
+          "arrival_time_ns": 0,
+          "flow_id": 0,
+          "operation": "WRITE",
+          "released_after_predecessors": true,
+          "request_id": 0,
+          "submitted_at_release": true,
+          "waited_for_dependency": false
+        },
+        {
+          "arrival_time_ns": 0,
+          "flow_id": 2,
+          "operation": "WRITE",
+          "released_after_predecessors": true,
+          "request_id": 1,
+          "submitted_at_release": true,
+          "waited_for_dependency": false
+        },
+        {
+          "arrival_time_ns": 0,
+          "flow_id": 0,
+          "operation": "READ",
+          "released_after_predecessors": true,
+          "request_id": 2,
+          "submitted_at_release": true,
+          "waited_for_dependency": true
+        },
+        {
+          "arrival_time_ns": 0,
+          "flow_id": 2,
+          "operation": "TRIM",
+          "released_after_predecessors": true,
+          "request_id": 3,
+          "submitted_at_release": true,
+          "waited_for_dependency": true
+        },
+        {
+          "arrival_time_ns": 0,
+          "flow_id": 2,
+          "operation": "WRITE",
+          "released_after_predecessors": true,
+          "request_id": 4,
+          "submitted_at_release": true,
+          "waited_for_dependency": true
+        },
+        {
+          "arrival_time_ns": 0,
+          "flow_id": 0,
+          "operation": "TRIM",
+          "released_after_predecessors": true,
+          "request_id": 5,
+          "submitted_at_release": true,
+          "waited_for_dependency": true
+        },
+        {
+          "arrival_time_ns": 0,
+          "flow_id": 0,
+          "operation": "WRITE",
+          "released_after_predecessors": true,
+          "request_id": 6,
+          "submitted_at_release": true,
+          "waited_for_dependency": true
+        }
+      ],
+      "configuration": {
+        "Configuration_Hash": "950553774655024151",
+        "Configuration_Hash_Algorithm": "fnv1a64-raw-xml",
+        "Measurement_End_Time_Ns": 1000000000,
+        "Measurement_Start_Time_Ns": 0,
+        "Simulator_Version": "MQSim-DWPDSim-vNext-1",
+        "Statistics_ABI_Version": 1,
+        "Time_Unit": "nanosecond"
+      },
+      "flows": [
+        {
+          "Bytes_Transferred_Read": 4096,
+          "Bytes_Transferred_Write": 8192,
+          "Bytes_Trimmed_Requested": 4096,
+          "Completed_Request_Count": 4,
+          "Flow_ID": 0,
+          "Generated_Request_Count": 4,
+          "Measurement_Host_Write_Bytes": 8192,
+          "Pool_ID": "slc",
+          "Read_Request_Count": 1,
+          "Trim_Request_Count": 1,
+          "Write_Request_Count": 2
+        },
+        {
+          "Bytes_Transferred_Read": 0,
+          "Bytes_Transferred_Write": 0,
+          "Bytes_Trimmed_Requested": 0,
+          "Completed_Request_Count": 0,
+          "Flow_ID": 1,
+          "Generated_Request_Count": 0,
+          "Measurement_Host_Write_Bytes": 0,
+          "Pool_ID": "slc",
+          "Read_Request_Count": 0,
+          "Trim_Request_Count": 0,
+          "Write_Request_Count": 0
+        },
+        {
+          "Bytes_Transferred_Read": 0,
+          "Bytes_Transferred_Write": 8192,
+          "Bytes_Trimmed_Requested": 4096,
+          "Completed_Request_Count": 3,
+          "Flow_ID": 2,
+          "Generated_Request_Count": 3,
+          "Measurement_Host_Write_Bytes": 8192,
+          "Pool_ID": "tlc",
+          "Read_Request_Count": 0,
+          "Trim_Request_Count": 1,
+          "Write_Request_Count": 2
+        }
+      ],
+      "ftl": {
+        "CMT_Hits": 3,
+        "CMT_Misses": 2,
+        "Effective_Trimmed_Sector_Count": 16,
+        "GC_Execution_Count": 0,
+        "GC_Page_Program_Count": 0,
+        "GC_Page_Read_Count": 0,
+        "Issued_Flash_Erase_CMD": 0,
+        "Issued_Flash_Program_CMD": 4,
+        "Issued_Flash_Program_CMD_For_Mapping": 0,
+        "Issued_Flash_Read_CMD": 1,
+        "Issued_Flash_Read_CMD_For_Mapping": 0,
+        "Pages_Invalidated_By_Trim": 2,
+        "Received_Trim_Command_Count": 2,
+        "Requested_Trim_Sector_Count": 16,
+        "Total_CMT_Queries": 5,
+        "Total_WL_Executions": 0
+      },
+      "pools": [
+        {
+          "Channel_IDs": 0,
+          "Effective_Trimmed_Bytes": 4096,
+          "Effective_Trimmed_Sector_Count": 8,
+          "Flash_Erase_Command_Count": 0,
+          "Flash_Program_Command_Count": 2,
+          "Flash_Read_Command_Count": 1,
+          "GC_Execution_Count": 0,
+          "GC_Page_Program_Count": 0,
+          "GC_Page_Read_Count": 0,
+          "Host_Read_Bytes": 4096,
+          "Host_Write_Bytes": 8192,
+          "ID": "slc",
+          "Logical_Capacity_Bytes": 1048576,
+          "Max_Block_Erase_Count": 0,
+          "Measurement_Flash_Programmed_Bytes": 16384,
+          "Measurement_Host_Write_Bytes": 8192,
+          "Measurement_Max_Block_Erase_Count": 0,
+          "Measurement_Total_Block_Erase_Count": 0,
+          "Media_Profile_ID": "slc_profile",
+          "PE_Cycle_Limit": 3,
+          "Pages_Invalidated_By_Trim": 1,
+          "Physical_Capacity_Bytes": 2097152,
+          "Received_Trim_Command_Count": 1,
+          "Requested_Trim_Bytes": 4096,
+          "Requested_Trim_Sector_Count": 8,
+          "Total_Block_Erase_Count": 0
+        },
+        {
+          "Channel_IDs": 1,
+          "Effective_Trimmed_Bytes": 4096,
+          "Effective_Trimmed_Sector_Count": 8,
+          "Flash_Erase_Command_Count": 0,
+          "Flash_Program_Command_Count": 2,
+          "Flash_Read_Command_Count": 0,
+          "GC_Execution_Count": 0,
+          "GC_Page_Program_Count": 0,
+          "GC_Page_Read_Count": 0,
+          "Host_Read_Bytes": 0,
+          "Host_Write_Bytes": 8192,
+          "ID": "tlc",
+          "Logical_Capacity_Bytes": 1048576,
+          "Max_Block_Erase_Count": 0,
+          "Measurement_Flash_Programmed_Bytes": 16384,
+          "Measurement_Host_Write_Bytes": 8192,
+          "Measurement_Max_Block_Erase_Count": 0,
+          "Measurement_Total_Block_Erase_Count": 0,
+          "Media_Profile_ID": "tlc_profile",
+          "PE_Cycle_Limit": 7,
+          "Pages_Invalidated_By_Trim": 1,
+          "Physical_Capacity_Bytes": 2097152,
+          "Received_Trim_Command_Count": 1,
+          "Requested_Trim_Bytes": 4096,
+          "Requested_Trim_Sector_Count": 8,
+          "Total_Block_Erase_Count": 0
+        }
+      ]
+    },
+    "measurement_window": {
+      "flow": {
+        "Average_Response_Time_Write": 29493,
+        "Bytes_Transferred_Write": 16384,
+        "Completed_Request_Count": 2,
+        "Generated_Request_Count": 2,
+        "Measurement_Host_Write_Bytes": 8192,
+        "Write_Request_Count": 2
+      },
+      "slc_channel": {
+        "Flash_Program_Command_Count": 2,
+        "Host_Write_Bytes": 16384,
+        "Measurement_Flash_Programmed_Bytes": 8192
+      },
+      "slc_pool": {
+        "Flash_Program_Command_Count": 2,
+        "Host_Write_Bytes": 16384,
+        "Measurement_Flash_Programmed_Bytes": 8192,
+        "Measurement_Host_Write_Bytes": 8192
+      }
+    },
+    "media_profile_latency": {
+      "slc": {
+        "Average_Response_Time_Write": 29493,
+        "Flash_Program_Command_Count": 1,
+        "Media_Profile_ID": "slc_profile",
+        "PE_Cycle_Limit": 100000
+      },
+      "tlc": {
+        "Average_Response_Time_Write": 47493,
+        "Flash_Program_Command_Count": 1,
+        "Media_Profile_ID": "tlc_profile",
+        "PE_Cycle_Limit": 100000
+      }
+    },
+    "shared_pool_namespace": {
+      "flows": [
+        {
+          "Bytes_Transferred_Write": 8192,
+          "Completed_Request_Count": 1,
+          "Flow_ID": 0,
+          "Generated_Request_Count": 1,
+          "Pool_ID": "slc",
+          "Write_Request_Count": 1
+        },
+        {
+          "Bytes_Transferred_Write": 8192,
+          "Completed_Request_Count": 1,
+          "Flow_ID": 1,
+          "Generated_Request_Count": 1,
+          "Pool_ID": "slc",
+          "Write_Request_Count": 1
+        }
+      ],
+      "slc_channel": {
+        "Flash_Program_Command_Count": 2,
+        "Host_Write_Bytes": 16384
+      },
+      "slc_pool": {
+        "Flash_Program_Command_Count": 2,
+        "Host_Write_Bytes": 16384,
+        "Logical_Capacity_Bytes": 1048576,
+        "Measurement_Flash_Programmed_Bytes": 16384
+      }
+    }
+  }
+}

@@ -31,10 +31,27 @@ def run_case(
     seed=321,
     static_wl=None,
     channels=2,
+    working_set_pages=None,
+    timeout=45,
 ):
+    if working_set_pages is not None and count < working_set_pages * flows:
+        raise ValueError("count must cover every working-set page in every flow")
     directory = base / f"{scheduler}-{name}"
     directory.mkdir(parents=True, exist_ok=True)
     config = ET.parse(FIXTURE / "ssdconfig.xml")
+    pages = working_set_pages or 128 // ((flows + 1) // 2)
+    if working_set_pages is not None:
+        # Each pool has a disjoint range per resident flow. Keep physical
+        # headroom for data, mapping pages and GC; do not just enlarge the trace.
+        pool_pages = pages * ((flows + 1) // 2)
+        pages_per_plane_block = 16 * dies * planes
+        blocks = max(
+            16,
+            (2 * pool_pages + pages_per_plane_block - 1) // pages_per_plane_block,
+        )
+        config.find(".//Block_No_Per_Plane").text = str(blocks)
+        for pool in config.findall(".//Flash_Pool_Parameter_Set"):
+            pool.find("Logical_Capacity_In_Sectors").text = str(pool_pages * 16)
     for key, value in {
         "Transaction_Scheduling_Policy": scheduler,
         "CMT_Capacity": cmt,
@@ -81,7 +98,6 @@ def run_case(
         }
         for _ in range(flows)
     ]
-    pages = 128 // ((flows + 1) // 2)
     state = [[0] * pages for _ in range(flows)]
     predecessors = [[-1] * pages for _ in range(flows)]
     effective_trim_sectors = 0
@@ -159,6 +175,7 @@ def run_case(
         "seed": seed,
         "static_wl": static_wl,
         "channels": channels,
+        "working_set_pages_per_flow": pages,
         "expected": expected,
         "expected_effective_trim_sectors": effective_trim_sectors,
     }
@@ -180,7 +197,7 @@ def run_case(
                 cwd=REPO,
                 stdout=out,
                 stderr=err,
-                timeout=45,
+                timeout=timeout,
                 check=False,
             )
             record["returncode"] = completed.returncode
@@ -194,8 +211,13 @@ def run_case(
         )
     else:
         root = ET.parse(directory / "workload_scenario_1.xml")
+        reported_flows = root.findall("Host/Host.IO_Flow")
+        if sorted(int(f.findtext("Flow_ID")) for f in reported_flows) != list(range(flows)):
+            record["errors"].append("missing, duplicate or unexpected flow IDs")
         for f in root.findall("Host/Host.IO_Flow"):
             stream = int(f.findtext("Flow_ID"))
+            if stream not in range(flows):
+                continue
             for tag, key in [
                 ("Generated_Request_Count", "requests"),
                 ("Completed_Request_Count", "requests"),
@@ -258,6 +280,8 @@ def run_case(
                     )
         ftl = root.find(".//SSDDevice.FTL")
         record["gc_count"] = int(ftl.get("GC_Execution_Count"))
+        record["mapping_reads"] = int(ftl.get("Issued_Flash_Read_CMD_For_Mapping"))
+        record["mapping_programs"] = int(ftl.get("Issued_Flash_Program_CMD_For_Mapping"))
         record["wl_count"] = int(ftl.get("Total_WL_Executions"))
         if static_wl is False and record["wl_count"] != 0:
             record["errors"].append("static wear leveling ran while disabled")
@@ -299,9 +323,15 @@ def main():
     parser.add_argument("--count", type=int, default=50000)
     parser.add_argument("--filter", default="")
     parser.add_argument("--seed", type=int, default=321)
+    parser.add_argument("--working-set-pages", type=int, help="Logical NAND pages per flow (not DWPDSim KV blocks); scales SSD capacity")
+    parser.add_argument("--timeout", type=float, default=45, help="Seconds per simulator run")
     args = parser.parse_args()
     if args.count < 128:
         parser.error("--count must be at least 128 to initialize the working set")
+    if args.working_set_pages is not None and args.working_set_pages < 64:
+        parser.error("--working-set-pages must be at least 64")
+    if args.timeout <= 0:
+        parser.error("--timeout must be positive")
     args.output = args.output.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
     cases = [
@@ -338,6 +368,8 @@ def main():
                     scheduler,
                     args.count,
                     seed=args.seed,
+                    working_set_pages=args.working_set_pages,
+                    timeout=args.timeout,
                     **options,
                 )
             )
