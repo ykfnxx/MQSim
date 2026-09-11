@@ -118,7 +118,7 @@ namespace SSD_Components
 							 candidate.Erase_count < best.Erase_count)) gc_candidate_block_id = block_id;
 					}
 					// When ordinary victims are exhausted, two idle data frontiers
-					// of the same stream may still fit in one block. Move only when
+					// sharing the plane may still fit in one block. Move only when
 					// the existing destination can hold every live source page;
 					// this returns a whole block without allocating a new destination.
 					if (!found && pbke->Ongoing_erase_operations.empty() &&
@@ -131,11 +131,11 @@ namespace SSD_Components
 								data->Ongoing_user_read_count != 0 || gc->Ongoing_user_read_count != 0) continue;
 							if (data->Current_page_write_index - data->Invalid_page_count <= pages_no_per_block - gc->Current_page_write_index) {
 								gc_candidate_block_id = data->BlockID;
-								pbke->Data_wf[stream] = NULL;
+								block_manager->Set_write_frontier(pbke->Data_wf, stream, NULL);
 							} else if (gc->Current_page_write_index - gc->Invalid_page_count <= pages_no_per_block - data->Current_page_write_index) {
 								gc_candidate_block_id = gc->BlockID;
-								pbke->GC_wf[stream] = data;
-								pbke->Data_wf[stream] = NULL;
+								block_manager->Set_write_frontier(pbke->GC_wf, stream, data);
+								block_manager->Set_write_frontier(pbke->Data_wf, stream, NULL);
 							} else continue;
 							found = compact_frontier = true;
 							break;

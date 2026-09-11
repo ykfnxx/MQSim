@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared mapping blocks must preserve each stream through GC and invalidation.
+"""Shared data/mapping blocks must preserve each stream through GC and TRIM.
 
 The six domains reuse the same MVPN numbers. Each stream overwrites its own
 21 data pages with a finite CMT, reads them, then trims every page. Counts and
@@ -19,7 +19,7 @@ REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "tests/dwpdsim_vnext"
 
 
-def run_case(binary, directory, scheduler, sharing):
+def run_case(binary, directory, scheduler, sharing, overlap_lpas=False):
     config = ET.parse(FIXTURE / "ssdconfig.xml")
     for key, value in {"CMT_Capacity": 64, "CMT_Sharing_Mode": sharing,
                        "Transaction_Scheduling_Policy": scheduler}.items():
@@ -49,7 +49,8 @@ def run_case(binary, directory, scheduler, sharing):
             for index, (page, operation) in enumerate(commands):
                 rid = stream * 10000 + index
                 predecessor = rid - 1 if index else -1
-                out.write(f"0 0 {(stream * 21 + page) * 16} 16 {operation} {rid} {predecessor}\n")
+                lpa = page if overlap_lpas else stream * 21 + page
+                out.write(f"0 0 {lpa * 16} 16 {operation} {rid} {predecessor}\n")
     workload.write(directory / "workload.xml")
     result = subprocess.run([str(binary), "-i", str(directory / "ssd.xml"),
                              "-w", str(directory / "workload.xml")],
@@ -89,7 +90,7 @@ def run_case(binary, directory, scheduler, sharing):
     assert mapping > 0
     writes = sum(len(commands) - 42 for commands in expected)
     assert int(ftl.get("Issued_Flash_Program_CMD")) == writes + mapping + int(ftl.get("GC_Page_Program_Count"))
-    print(f"PASS {scheduler}/{sharing}: 6 mapping domains, {writes} writes, 126 reads, 126 effective page trims", flush=True)
+    print(f"PASS {scheduler}/{sharing}/overlap_lpas={overlap_lpas}: 6 domains, {writes} writes, 126 reads, 126 effective page trims", flush=True)
 
 
 def main():
@@ -99,9 +100,10 @@ def main():
     with tempfile.TemporaryDirectory(prefix="mqsim-mapping-ownership-") as temporary:
         for scheduler in ("OUT_OF_ORDER", "PRIORITY_OUT_OF_ORDER"):
             for sharing in ("SHARED", "EQUAL_PARTITIONING"):
-                directory = Path(temporary) / f"{scheduler}-{sharing}"
-                directory.mkdir()
-                run_case(args.binary.resolve(), directory, scheduler, sharing)
+                for overlap_lpas in (False, True):
+                    directory = Path(temporary) / f"{scheduler}-{sharing}-{overlap_lpas}"
+                    directory.mkdir()
+                    run_case(args.binary.resolve(), directory, scheduler, sharing, overlap_lpas)
 
 
 if __name__ == "__main__":

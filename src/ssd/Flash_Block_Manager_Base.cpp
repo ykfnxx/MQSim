@@ -107,8 +107,20 @@ namespace SSD_Components
 		}
 		Stream_id = NO_STREAM;
 		Holds_mapping_data = false;
-		std::vector<stream_id_type>().swap(Mapping_page_streams);
+		std::vector<stream_id_type>().swap(Page_streams);
 		Erase_transaction = NULL;
+	}
+
+	void Flash_Block_Manager_Base::Set_write_frontier(Block_Pool_Slot_Type** frontiers, stream_id_type stream, Block_Pool_Slot_Type* block)
+	{
+		// KV flows sharing a plane also share its writable blocks. Update all
+		// aliases on allocation, retirement and ownership transfer, so no flow
+		// can keep writing a full block or consume a GC-only destination.
+		if (gc_and_wl_unit->Get_gc_policy() == GC_Block_Selection_Policy_Type::KV_THREE_GREEDY) {
+			for (unsigned int id = 0; id < total_concurrent_streams_no; ++id) frontiers[id] = block;
+		} else {
+			frontiers[stream] = block;
+		}
 	}
 
 	Block_Pool_Slot_Type* PlaneBookKeepingType::Get_a_free_block(stream_id_type stream_id, bool for_mapping_data)

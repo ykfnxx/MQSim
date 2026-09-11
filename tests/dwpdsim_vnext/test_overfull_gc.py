@@ -44,7 +44,7 @@ CASES = {
 }
 
 
-def run_case(binary, directory, scheduler, case, seed=321):
+def run_case(binary, directory, scheduler, case, seed=321, timeout=None):
     pages, count, interval, flows, channels_per_pool = CASES[case]
     pages *= channels_per_pool
     count *= channels_per_pool
@@ -104,7 +104,8 @@ def run_case(binary, directory, scheduler, case, seed=321):
         [str(binary), "-i", str(directory / "ssd.xml"), "-w", str(directory / "workload.xml")],
         # The 2048-page blocks can require thousands of real relocations per
         # overwrite near the reserve; allow the larger workload to finish.
-        cwd=REPO, capture_output=True, text=True, timeout=300 if thirty_blocks else 60,
+        cwd=REPO, capture_output=True, text=True,
+        timeout=timeout if timeout is not None else (300 if thirty_blocks else 60),
     )
     if case == "nearfull-first-fill-rejected":
         assert result.returncode != 0

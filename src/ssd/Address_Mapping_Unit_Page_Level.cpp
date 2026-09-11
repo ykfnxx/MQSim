@@ -567,7 +567,7 @@ namespace SSD_Components
 			Convert_ppa_to_address(ppa, address);
 			PlaneBookKeepingType* plane = block_manager->Get_plane_bookkeeping_entry(address);
 			Block_Pool_Slot_Type* block = &plane->Blocks[address.BlockID];
-				if (block->Stream_id == stream_id && block_manager->Is_page_valid(block, address.PageID) &&
+				if (block->Get_page_stream_id(address.PageID) == stream_id && block_manager->Is_page_valid(block, address.PageID) &&
 					flash_controller->Get_metadata(address.ChannelID, address.ChipID, address.DieID, address.PlaneID, address.BlockID, address.PageID) == lpa) {
 					block_manager->Invalidate_page_in_block(stream_id, address);
 					Stats::Total_pages_invalidated_by_trim++;
@@ -676,7 +676,7 @@ namespace SSD_Components
 		} else {//This is a write transaction
 			allocate_plane_for_user_write((NVM_Transaction_Flash_WR*)transaction);
 			//The reserve protects allocation of a new block, not unused pages
-			//in this stream's current frontier. Blocking those pages can leave
+			//in the current frontier. Blocking those pages can leave
 			//writes waiting forever when there are no invalid pages for GC.
 			PlaneBookKeepingType* plane = block_manager->Get_plane_bookkeeping_entry(transaction->Address);
 			// Once relocation has drained, its partially filled data block is
@@ -688,8 +688,8 @@ namespace SSD_Components
 				plane->Get_free_block_pool_size() > 0 &&
 				plane->Ongoing_erase_operations.empty() &&
 				ftl->GC_and_WL_Unit->Stop_servicing_writes(transaction->Address)) {
-				plane->Data_wf[streamID] = plane->GC_wf[streamID];
-				plane->GC_wf[streamID] = NULL;
+				block_manager->Set_write_frontier(plane->Data_wf, streamID, plane->GC_wf[streamID]);
+				block_manager->Set_write_frontier(plane->GC_wf, streamID, NULL);
 			}
 			const Block_Pool_Slot_Type* frontier = plane->Data_wf[streamID];
 			bool borrow_gc_reserve = false;
@@ -714,8 +714,8 @@ namespace SSD_Components
 			}
 			allocate_page_in_plane_for_user_write((NVM_Transaction_Flash_WR*)transaction, false);
 			if (borrow_gc_reserve) {
-				plane->GC_wf[streamID] = plane->Data_wf[streamID];
-				plane->Data_wf[streamID] = NULL;
+				block_manager->Set_write_frontier(plane->GC_wf, streamID, plane->Data_wf[streamID]);
+				block_manager->Set_write_frontier(plane->Data_wf, streamID, NULL);
 				ftl->GC_and_WL_Unit->Check_gc_required(plane->Get_free_block_pool_size(), transaction->Address);
 			}
 		}
@@ -1889,8 +1889,8 @@ namespace SSD_Components
 		for (flash_page_ID_type pageID = 0; pageID < block->Current_page_write_index; pageID++) {
 				if (block_manager->Is_page_valid(block, pageID)) {
 					addr.PageID = pageID;
+					const stream_id_type owner = block->Get_page_stream_id(pageID);
 					if (block->Holds_mapping_data) {
-						const stream_id_type owner = block->Get_page_stream_id(pageID);
 						MVPN_type mpvn = (MVPN_type)flash_controller->Get_metadata(addr.ChannelID, addr.ChipID, addr.DieID, addr.PlaneID, addr.BlockID, addr.PageID);
 						if (mpvn == NO_LPA || mpvn >= domains[owner]->Total_translation_pages_no) {
 							block_manager->Invalidate_page_in_block(owner, addr);
@@ -1903,19 +1903,19 @@ namespace SSD_Components
 						Set_barrier_for_accessing_mvpn(owner, mpvn);
 					} else {
 						LPA_type lpa = flash_controller->Get_metadata(addr.ChannelID, addr.ChipID, addr.DieID, addr.PlaneID, addr.BlockID, addr.PageID);
-						if (lpa == NO_LPA || lpa >= domains[block->Stream_id]->Total_logical_pages_no) {
-							block_manager->Invalidate_page_in_block(block->Stream_id, addr);
+						if (lpa == NO_LPA || lpa >= domains[owner]->Total_logical_pages_no) {
+							block_manager->Invalidate_page_in_block(owner, addr);
 							continue;
 						}
-						LPA_type ppa = domains[block->Stream_id]->GlobalMappingTable[lpa].PPA;
-					if (domains[block->Stream_id]->CMT->Exists(block->Stream_id, lpa)) {
-						ppa = domains[block->Stream_id]->CMT->Retrieve_ppa(block->Stream_id, lpa);
+						LPA_type ppa = domains[owner]->GlobalMappingTable[lpa].PPA;
+					if (domains[owner]->CMT->Exists(owner, lpa)) {
+						ppa = domains[owner]->CMT->Retrieve_ppa(owner, lpa);
 					}
 						if (ppa != Convert_address_to_ppa(addr)) {
-							block_manager->Invalidate_page_in_block(block->Stream_id, addr);
+							block_manager->Invalidate_page_in_block(owner, addr);
 							continue;
 					}
-					Set_barrier_for_accessing_lpa(block->Stream_id, lpa);
+					Set_barrier_for_accessing_lpa(owner, lpa);
 				}
 			}
 		}

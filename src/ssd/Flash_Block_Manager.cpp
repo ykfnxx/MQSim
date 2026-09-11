@@ -23,11 +23,12 @@ namespace SSD_Components
 	{
 		PlaneBookKeepingType *plane_record = &plane_manager[page_address.ChannelID][page_address.ChipID][page_address.DieID][page_address.PlaneID];
 		const bool allocated_frontier = plane_record->Data_wf[stream_id] == NULL;
-		if (plane_record->Data_wf[stream_id] == NULL) plane_record->Data_wf[stream_id] = plane_record->Get_a_free_block(stream_id, false);
+		if (plane_record->Data_wf[stream_id] == NULL) Set_write_frontier(plane_record->Data_wf, stream_id, plane_record->Get_a_free_block(stream_id, false));
 		plane_record->Valid_pages_count++;
 		plane_record->Free_pages_count--;		
 		page_address.BlockID = plane_record->Data_wf[stream_id]->BlockID;
 		page_address.PageID = plane_record->Data_wf[stream_id]->Current_page_write_index++;
+		plane_record->Data_wf[stream_id]->Record_page_stream_id(stream_id);
 		//Online initialization for an unmapped read allocates data without a NAND program.
 		if (issue_program) {
 			program_transaction_issued(page_address);
@@ -38,7 +39,7 @@ namespace SSD_Components
 		//The current write frontier block is written to the end
 		if(plane_record->Data_wf[stream_id]->Current_page_write_index == pages_no_per_block) {
 			//Assign a new write frontier block
-			plane_record->Data_wf[stream_id] = NULL;
+			Set_write_frontier(plane_record->Data_wf, stream_id, NULL);
 		}
 		//Allocating a frontier can cross the GC threshold before the block is full.
 		if (allocated_frontier || plane_record->Data_wf[stream_id] == NULL) {
@@ -51,18 +52,19 @@ namespace SSD_Components
 	void Flash_Block_Manager::Allocate_block_and_page_in_plane_for_gc_write(const stream_id_type stream_id, NVM::FlashMemory::Physical_Page_Address& page_address)
 	{
 		PlaneBookKeepingType *plane_record = &plane_manager[page_address.ChannelID][page_address.ChipID][page_address.DieID][page_address.PlaneID];
-		if (plane_record->GC_wf[stream_id] == NULL) plane_record->GC_wf[stream_id] = plane_record->Get_a_free_block(stream_id, false);
+		if (plane_record->GC_wf[stream_id] == NULL) Set_write_frontier(plane_record->GC_wf, stream_id, plane_record->Get_a_free_block(stream_id, false));
 		plane_record->Valid_pages_count++;
 		plane_record->Free_pages_count--;		
 		page_address.BlockID = plane_record->GC_wf[stream_id]->BlockID;
 		page_address.PageID = plane_record->GC_wf[stream_id]->Current_page_write_index++;
+		plane_record->GC_wf[stream_id]->Record_page_stream_id(stream_id);
 		plane_record->GC_wf[stream_id]->Last_write_time = Simulator->Time();
 
 		
 		//The current write frontier block is written to the end
 		if (plane_record->GC_wf[stream_id]->Current_page_write_index == pages_no_per_block) {
 			//Assign a new write frontier block
-			plane_record->GC_wf[stream_id] = NULL;
+			Set_write_frontier(plane_record->GC_wf, stream_id, NULL);
 			gc_and_wl_unit->Check_gc_required(plane_record->Get_free_block_pool_size(), page_address);
 		}
 		plane_record->Check_bookkeeping_correctness(page_address);
@@ -75,7 +77,7 @@ namespace SSD_Components
 		}
 			
 		PlaneBookKeepingType *plane_record = &plane_manager[plane_address.ChannelID][plane_address.ChipID][plane_address.DieID][plane_address.PlaneID];
-		if (plane_record->Data_wf[stream_id] == NULL) plane_record->Data_wf[stream_id] = plane_record->Get_a_free_block(stream_id, false);
+		if (plane_record->Data_wf[stream_id] == NULL) Set_write_frontier(plane_record->Data_wf, stream_id, plane_record->Get_a_free_block(stream_id, false));
 		if (plane_record->Data_wf[stream_id]->Current_page_write_index > 0) {
 			PRINT_ERROR("Illegal operation: the Allocate_Pages_in_block_and_invalidate_remaining_for_preconditioning function should be executed for an erased block!")
 		}
@@ -100,31 +102,21 @@ namespace SSD_Components
 		}
 
 		//Update the write frontier
-		plane_record->Data_wf[stream_id] = NULL;
+		Set_write_frontier(plane_record->Data_wf, stream_id, NULL);
 	}
 
 	void Flash_Block_Manager::Allocate_block_and_page_in_plane_for_translation_write(const stream_id_type streamID, NVM::FlashMemory::Physical_Page_Address& page_address, bool is_for_gc)
 	{
 		PlaneBookKeepingType *plane_record = &plane_manager[page_address.ChannelID][page_address.ChipID][page_address.DieID][page_address.PlaneID];
 		const bool allocated_frontier = plane_record->Translation_wf[streamID] == NULL;
-		const bool shared_mapping = gc_and_wl_unit->Get_gc_policy() == GC_Block_Selection_Policy_Type::KV_THREE_GREEDY;
 		if (allocated_frontier) {
-			Block_Pool_Slot_Type* frontier = plane_record->Get_a_free_block(streamID, true);
-			plane_record->Translation_wf[streamID] = frontier;
-			if (shared_mapping) {
-				// All slots in this plane alias one mapping frontier, including
-				// streams that have not written mappings yet. AMU space checks
-				// therefore see existing room before requesting a new block.
-				for (unsigned int stream = 0; stream < total_concurrent_streams_no; ++stream) {
-					plane_record->Translation_wf[stream] = frontier;
-				}
-			}
+			Set_write_frontier(plane_record->Translation_wf, streamID, plane_record->Get_a_free_block(streamID, true));
 		}
 		plane_record->Valid_pages_count++;
 		plane_record->Free_pages_count--;
 		page_address.BlockID = plane_record->Translation_wf[streamID]->BlockID;
 		page_address.PageID = plane_record->Translation_wf[streamID]->Current_page_write_index++;
-		plane_record->Translation_wf[streamID]->Mapping_page_streams.push_back(streamID);
+		plane_record->Translation_wf[streamID]->Record_page_stream_id(streamID);
 		//GC completion does not decrement the ordinary program counter.
 		if (is_for_gc) {
 			plane_record->Translation_wf[streamID]->Last_write_time = Simulator->Time();
@@ -135,12 +127,7 @@ namespace SSD_Components
 		//The current write frontier block for translation pages is written to the end
 		if (plane_record->Translation_wf[streamID]->Current_page_write_index == pages_no_per_block) {
 			//Assign a new write frontier block
-			plane_record->Translation_wf[streamID] = NULL;
-			if (shared_mapping) {
-				for (unsigned int stream = 0; stream < total_concurrent_streams_no; ++stream) {
-					plane_record->Translation_wf[stream] = NULL;
-				}
-			}
+			Set_write_frontier(plane_record->Translation_wf, streamID, NULL);
 		}
 		if (!is_for_gc && (allocated_frontier || plane_record->Translation_wf[streamID] == NULL)) {
 			gc_and_wl_unit->Check_gc_required(plane_record->Get_free_block_pool_size(), page_address);

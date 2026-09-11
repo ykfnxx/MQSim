@@ -41,11 +41,17 @@ namespace SSD_Components
 		uint64_t* Invalid_page_bitmap;//A bit sequence that keeps track of valid/invalid status of pages in the block. A "0" means valid, and a "1" means invalid.
 		stream_id_type Stream_id = NO_STREAM;
 		bool Holds_mapping_data = false;
-		// Mapping blocks may contain pages from several streams. Data blocks
-		// retain their single block owner; allocate this vector only for mappings.
-		std::vector<stream_id_type> Mapping_page_streams;
+		// Shared data/mapping blocks retain each page's owner. Single-owner
+		// blocks need no vector; materialize it on the first cross-stream write.
+		std::vector<stream_id_type> Page_streams;
 		stream_id_type Get_page_stream_id(flash_page_ID_type page) const {
-			return Holds_mapping_data ? Mapping_page_streams.at(page) : Stream_id;
+			return Page_streams.empty() ? Stream_id : Page_streams.at(page);
+		}
+		// Called immediately after allocating the next physical page.
+		void Record_page_stream_id(stream_id_type stream) {
+			if (Page_streams.empty() && stream == Stream_id) return;
+			if (Page_streams.empty()) Page_streams.resize(Current_page_write_index - 1, Stream_id);
+			Page_streams.push_back(stream);
 		}
 		bool Has_ongoing_gc_wl = false;
 		NVM_Transaction_Flash_ER* Erase_transaction;
@@ -97,6 +103,7 @@ namespace SSD_Components
 		flash_block_ID_type Get_coldest_block_id(const NVM::FlashMemory::Physical_Page_Address& plane_address);
 		unsigned int Get_min_max_erase_difference(const NVM::FlashMemory::Physical_Page_Address& plane_address);
 		void Set_GC_and_WL_Unit(GC_and_WL_Unit_Base* );
+		void Set_write_frontier(Block_Pool_Slot_Type** frontiers, stream_id_type stream, Block_Pool_Slot_Type* block);
 		PlaneBookKeepingType* Get_plane_bookkeeping_entry(const NVM::FlashMemory::Physical_Page_Address& plane_address);
 		bool Block_has_ongoing_gc_wl(const NVM::FlashMemory::Physical_Page_Address& block_address);//Checks if there is an ongoing gc for block_address
 		bool Can_execute_gc_wl(const NVM::FlashMemory::Physical_Page_Address& block_address);//Checks if the gc request can be executed on block_address (there shouldn't be any ongoing user read/program requests targeting block_address)

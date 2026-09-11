@@ -224,6 +224,7 @@ python3 tests/dwpdsim_vnext/test_frontier_drain.py --binary "${binary}"
 python3 tests/dwpdsim_vnext/test_overfull_gc.py --binary "${binary}"
 python3 tests/dwpdsim_vnext/test_frontier_compaction.py --binary "${binary}"
 python3 tests/dwpdsim_vnext/test_mapping_ownership.py --binary "${binary}"
+python3 tests/dwpdsim_vnext/test_shared_data_frontier.py --binary "${binary}"
 python3 tests/dwpdsim_vnext/test_waiting_cmt.py --binary "${binary}"
 python3 tests/dwpdsim_vnext/stress_replay.py --binary "${binary}" --count 1000 \
   --output build/vnext-stress-regression

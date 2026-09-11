@@ -15,7 +15,7 @@ vpath %.cpp $(SRC_DIR)
 
 define make-goal
 $1/%.o: %.cpp
-	$(CC) $(CC_FLAGS) $(INCLUDES) -c $$< -o $$@
+	$(CC) $(CC_FLAGS) -MMD -MP $(INCLUDES) -c $$< -o $$@
 endef
 
 .PHONY: all checkdirs clean
@@ -35,3 +35,8 @@ clean:
 	rm -f MQSim
 
 $(foreach bdir,$(BUILD_DIR),$(eval $(call make-goal,$(bdir))))
+
+# Bootstrap dependency files for objects built with older versions of this
+# Makefile, and rebuild whenever compile rules change.
+$(OBJ): Makefile
+-include $(OBJ:.o=.d)

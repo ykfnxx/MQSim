@@ -180,8 +180,8 @@ frontier-selection repair; by itself it did not fix the no-TRIM traces.
 The no-TRIM reproducer can strand most of its free pages in separate,
 partially written mapping frontiers. GC cannot merge these while each block
 is assumed to belong to a single stream. Under `KV_THREE_GREEDY`, mapping
-writes now use one shared translation frontier per plane. Data frontiers and
-other GC policies retain their existing allocation rules. Physical/logical
+writes use one shared translation frontier per plane. Data sharing is
+described below; other GC policies retain their allocation rules. Physical/logical
 capacity, CMT size, final-block reserve and drain validation are unchanged.
 
 Mapping pages record their stream owner in block bookkeeping. Invalidation,
@@ -219,4 +219,45 @@ python3 tests/dwpdsim_vnext/test_overfull_gc.py --case shared-two-expanded
 python3 tests/dwpdsim_vnext/test_overfull_gc.py --case shared-two-stalled
 python3 tests/dwpdsim_vnext/test_overfull_gc.py --case shared-thirty-overwrite
 python3 tests/dwpdsim_vnext/test_mapping_ownership.py
+```
+
+### Shared data frontiers and working-set boundaries
+
+Under `KV_THREE_GREEDY`, each plane has one shared host-data frontier and one
+separate shared GC-data frontier, as well as its shared mapping frontier.
+All stream slots for a frontier are updated together when a block is allocated,
+filled or transferred between host and GC ownership. Host writes cannot consume
+the GC destination during an active relocation. The free-block reserve and
+first-write admission rule are unchanged; no capacity estimate replaces GC.
+
+Data pages, like mapping pages, retain their stream identity for relocation,
+TRIM and LPA barriers. A block stores per-page owners only once a second stream
+writes to it; single-owner blocks use the block owner without allocating a
+vector. Erasure clears the owner records. Other GC policies keep their separate
+per-stream frontiers. This changes physical placement and therefore can change
+GC/WAF/latency for multi-flow KV replays, without changing logical I/O semantics.
+
+`test_shared_data_frontier.py` adds 32 checks under both schedulers. The minimal
+case is three flows x 69 live pages x 256 writes (768 commands); `441e121`
+leaves first writes pending with one free block. The larger matrix varies
+2/3/4/6/8 flows and 15 working-set sizes at 20,000 writes per flow, totaling
+2,761,536 commands including the minimal cases. All cases retain 16 blocks x
+16 pages, a 64-byte CMT and a 227-page namespace; none uses TRIM to release
+space. The shared oracle checks exact completions, IDs, dependencies, host
+bytes, NAND program conservation and drained queues. Each replay allows 300
+seconds by default (`--timeout`) for near-full GC, rather than treating a
+60-second wall-clock timeout as proof of an AMU deadlock. No expected-error oracle
+is used for these stalls. Existing ownership tests additionally check reads
+and effective invalidation by TRIM after multi-flow overwrites and GC, with
+both disjoint and overlapping LPA values across streams. Reverting TRIM to
+block-owner matching makes its exact invalidated-page assertion fail.
+
+The Makefile tracks header dependencies and bootstraps them when upgraded.
+Page-owner lookup is inline and used by both immediate and deferred GC;
+rebuilding only changed `.cpp` files would leave inconsistent owner handling.
+
+```bash
+python3 tests/dwpdsim_vnext/test_shared_data_frontier.py
+python3 tests/dwpdsim_vnext/test_shared_data_frontier.py --count 50000 --seed 322
+python3 tests/dwpdsim_vnext/test_shared_data_frontier.py --binary /path/to/old/MQSim --count 256
 ```
