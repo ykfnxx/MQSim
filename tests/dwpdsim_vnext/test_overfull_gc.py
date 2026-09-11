@@ -11,6 +11,7 @@ import argparse
 import copy
 import csv
 import random
+import re
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
@@ -28,14 +29,25 @@ CASES = {
     "nearfull-partial": (224, 1024, 0, 1, 1),
     "nearfull-six-channel": (224, 5000, 0, 2, 3),
     "nearfull-first-fill-rejected": (225, 225, 0, 1, 1),
+    "shared-two": (96, 5000, 0, 2, 1),
+    "shared-three": (53, 5000, 0, 3, 1),
+    "shared-three-spaced": (53, 5000, 1000000, 3, 1),
+    "shared-three-partial": (53, 1024, 0, 3, 1),
+    "shared-four": (32, 5000, 0, 4, 1),
+    "shared-six": (16, 5000, 0, 6, 1),
+    "shared-two-capacity-rejected": (104, 5000, 0, 2, 1),
+    "shared-six-capacity-rejected": (21, 5000, 0, 6, 1),
+    "shared-two-expanded": (104, 5000, 0, 2, 1),
+    "shared-six-expanded": (21, 5000, 0, 6, 1),
 }
 
 
-def run_case(binary, directory, scheduler, case):
+def run_case(binary, directory, scheduler, case, seed=321):
     pages, count, interval, flows, channels_per_pool = CASES[case]
     pages *= channels_per_pool
     count *= channels_per_pool
     partial = case.endswith("-partial")
+    shared = case.startswith("shared-")
     write_bytes = pages * 8192 + (count - pages) * (4096 if partial else 8192)
     config = ET.parse(FIXTURE / "ssdconfig.xml")
     for key, value in {
@@ -45,6 +57,8 @@ def run_case(binary, directory, scheduler, case):
         "Measurement_End_Time_Ns": 10**15,
     }.items():
         config.find(".//" + key).text = str(value)
+    if case.endswith("-expanded"):
+        config.find(".//Block_No_Per_Plane").text = "32"
     for index, pool in enumerate(config.findall(".//Flash_Pool_Parameter_Set")):
         pool.find("Channel_IDs").text = ",".join(
             str(index * channels_per_pool + channel) for channel in range(channels_per_pool)
@@ -61,12 +75,12 @@ def run_case(binary, directory, scheduler, case):
     predecessors = {}
     for stream in range(flows):
         flow = copy.deepcopy(template)
-        flow.find("Pool_ID").text = ("slc", "tlc")[stream]
+        flow.find("Pool_ID").text = "slc" if shared else ("slc", "tlc")[stream]
         trace = directory / f"{stream}.trace"
         flow.find("File_Path").text = str(trace)
         flow.find("Enable_Request_Completion_Log").text = "true"
         scenario.append(flow)
-        rng = random.Random(321 + stream)
+        rng = random.Random(seed + stream)
         previous = [-1] * pages
         with trace.open("w") as handle:
             for index in range(count):
@@ -75,6 +89,8 @@ def run_case(binary, directory, scheduler, case):
                 predecessors[request_id] = previous[page]
                 sectors = 8 if partial and index >= pages else 16
                 offset = 8 * (index % 2) if sectors == 8 else 0
+                if shared:
+                    offset += stream * pages * 16
                 handle.write(f"{index * interval} 0 {page * 16 + offset} {sectors} 0 {request_id} {previous[page]}\n")
                 previous[page] = request_id
     workload.write(directory / "workload.xml")
@@ -82,11 +98,20 @@ def run_case(binary, directory, scheduler, case):
         [str(binary), "-i", str(directory / "ssd.xml"), "-w", str(directory / "workload.xml")],
         cwd=REPO, capture_output=True, text=True, timeout=60,
     )
-    if case == "nearfull-first-fill-rejected":
+    if case == "nearfull-first-fill-rejected" or case.endswith("-capacity-rejected"):
         assert result.returncode != 0
         assert "Write_transactions_for_overfull_planes=" in result.stderr
         assert "Simulation ended with pending address-mapping work" in result.stderr
         assert "Simulation complete." not in result.stdout
+        assert not (directory / "workload_scenario_1.xml").exists()
+        if shared:
+            assert "AMU capacity exhausted:" in result.stderr, result.stderr
+            assert "available_blocks=16" in result.stderr
+            assert "ongoing_gc=0" in result.stderr
+            capacity = re.search(r"minimum_blocks_with_one_gc_reserve=(\d+) available_blocks=(\d+)", result.stderr)
+            assert capacity and int(capacity[1]) > int(capacity[2])
+            print(f"PASS {scheduler}/{case}: insufficient per-stream block capacity diagnosed")
+            return
         print(f"PASS {scheduler}/{case}: a first write cannot borrow the GC reserve")
         return
     assert result.returncode == 0, f"{scheduler}/{case}: {result.stderr}"
@@ -150,13 +175,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=REPO / "MQSim")
     parser.add_argument("--case", choices=CASES)
+    parser.add_argument("--seed", type=int, default=321)
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="mqsim-overfull-gc-") as temporary:
         for scheduler in ("OUT_OF_ORDER", "PRIORITY_OUT_OF_ORDER"):
             for case in ([args.case] if args.case else CASES):
                 directory = Path(temporary) / f"{scheduler}-{case}"
                 directory.mkdir()
-                run_case(args.binary.resolve(), directory, scheduler, case)
+                run_case(args.binary.resolve(), directory, scheduler, case, args.seed)
 
 
 if __name__ == "__main__":
