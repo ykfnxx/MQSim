@@ -105,15 +105,32 @@ python3 tests/dwpdsim_vnext/test_overfull_gc.py --binary ./MQSim
 python3 tests/dwpdsim_vnext/test_overfull_gc.py --binary /path/to/old/MQSim --case gc-frontier-burst
 ```
 
-This is a finite-headroom liveness regression, not a guarantee that every
-advertised logical-capacity configuration has enough physical space for all
-per-stream data, mapping and GC frontiers at full occupancy. In particular,
-the 224-live-page / 256-physical-page overwrite probe still stalls: after
-initial fill there is no user frontier, the mapping frontier occupies a
-block, and the final free block is reserved. Unlike the 208-page reproducer,
-there is no invalid GC frontier to reclaim. That capacity/admission boundary
-is not repaired by this change (the existing 224-write first-fill test still
-passes).
+The same suite includes ten additional near-full checks (18 total):
+224-live-page / 256-physical-page burst and spaced overwrites, partial-page
+overwrites requiring an update read, six-channel replay, and rejection of
+a first write that would consume the GC reserve. Both schedulers are tested.
+
+The 224-page overwrite previously stalled because there was no user frontier
+and no invalid GC frontier to reclaim. Under `KV_THREE_GREEDY`, an overwrite
+of an existing page in a full block of the same plane may borrow the final
+free block when no erase is ongoing and this stream has no GC frontier. It
+writes one host page, then hands the rest of that block exclusively to GC.
+First writes cannot take this path. At zero free blocks, GC must fit all live
+victim pages into an existing destination and must not promise the same
+space to another concurrent relocation. Mapping writebacks also preserve
+the destination pages needed by mapping GC.
+
+Zero free pages is permitted only transiently when an ongoing erase has no
+valid pages left to relocate; the last relocation can thus finish and release
+its victim. All other exhaustion and bookkeeping checks remain enabled.
+The six-channel test also covers GC filling a CMT slot already reserved as
+WAITING for an outstanding mapping read, without a duplicate reservation.
+
+The independent oracle additionally counts the update reads required by
+each partial overwrite. Near-full relocation can have high write
+amplification; draining correctly does not imply low WAF or guarantee that
+an arbitrary first-fill configuration has sufficient physical capacity for
+data plus mapping and internal frontiers.
 
 `test_waiting_cmt.py` exercises six/eight flows sharing a 64-byte CMT with
 8,192 pages per flow and 100,000 burst I/Os under both schedulers. Before the

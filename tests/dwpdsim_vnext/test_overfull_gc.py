@@ -23,6 +23,11 @@ CASES = {
     "mapping-prefix": (208, 512, 0, 1, 1),
     "mapping-spaced": (192, 5000, 1000000, 1, 1),
     "six-channel": (192, 5000, 0, 2, 3),
+    "nearfull-burst": (224, 5000, 0, 1, 1),
+    "nearfull-spaced": (224, 5000, 1000000, 1, 1),
+    "nearfull-partial": (224, 1024, 0, 1, 1),
+    "nearfull-six-channel": (224, 5000, 0, 2, 3),
+    "nearfull-first-fill-rejected": (225, 225, 0, 1, 1),
 }
 
 
@@ -30,6 +35,8 @@ def run_case(binary, directory, scheduler, case):
     pages, count, interval, flows, channels_per_pool = CASES[case]
     pages *= channels_per_pool
     count *= channels_per_pool
+    partial = case.endswith("-partial")
+    write_bytes = pages * 8192 + (count - pages) * (4096 if partial else 8192)
     config = ET.parse(FIXTURE / "ssdconfig.xml")
     for key, value in {
         "Transaction_Scheduling_Policy": scheduler,
@@ -66,13 +73,22 @@ def run_case(binary, directory, scheduler, case):
                 page = index if index < pages else rng.randrange(pages)
                 request_id = stream * count + index
                 predecessors[request_id] = previous[page]
-                handle.write(f"{index * interval} 0 {page * 16} 16 0 {request_id} {previous[page]}\n")
+                sectors = 8 if partial and index >= pages else 16
+                offset = 8 * (index % 2) if sectors == 8 else 0
+                handle.write(f"{index * interval} 0 {page * 16 + offset} {sectors} 0 {request_id} {previous[page]}\n")
                 previous[page] = request_id
     workload.write(directory / "workload.xml")
     result = subprocess.run(
         [str(binary), "-i", str(directory / "ssd.xml"), "-w", str(directory / "workload.xml")],
         cwd=REPO, capture_output=True, text=True, timeout=60,
     )
+    if case == "nearfull-first-fill-rejected":
+        assert result.returncode != 0
+        assert "Write_transactions_for_overfull_planes=" in result.stderr
+        assert "Simulation ended with pending address-mapping work" in result.stderr
+        assert "Simulation complete." not in result.stdout
+        print(f"PASS {scheduler}/{case}: a first write cannot borrow the GC reserve")
+        return
     assert result.returncode == 0, f"{scheduler}/{case}: {result.stderr}"
     assert "Simulation complete." in result.stdout
     root = ET.parse(directory / "workload_scenario_1.xml")
@@ -82,7 +98,7 @@ def run_case(binary, directory, scheduler, case):
         for tag, expected in {
             "Generated_Request_Count": count, "Completed_Request_Count": count,
             "Write_Request_Count": count, "Read_Request_Count": 0, "Trim_Request_Count": 0,
-            "Bytes_Transferred_Write": count * 8192, "Measurement_Host_Write_Bytes": count * 8192,
+            "Bytes_Transferred_Write": write_bytes, "Measurement_Host_Write_Bytes": write_bytes,
         }.items():
             assert int(flow.findtext(tag)) == expected, (case, tag, flow.findtext(tag), expected)
 
@@ -118,11 +134,15 @@ def run_case(binary, directory, scheduler, case):
     assert int(ftl.get("Issued_Flash_Program_CMD")) == count * flows + gc_programs + physical_mapping_programs
     for queue in queues:
         assert queue.get("No_Of_Transactions_Enqueued") == queue.get("No_Of_Transactions_Dequeued"), queue.attrib
+    if partial:
+        update_reads = sum(int(queue.get("No_Of_Transactions_Enqueued"))
+                           for queue in queues if "User_Read_TR_Queue" in queue.tag)
+        assert update_reads == (count - pages) * flows
     pools = root.findall(".//SSDDevice.Pool")
     channels = root.findall(".//SSDDevice.Channel")
     for field in ("Host_Write_Bytes", "Measurement_Host_Write_Bytes"):
-        assert sum(int(pool.get(field)) for pool in pools) == count * flows * 8192
-    assert sum(int(channel.get("Host_Write_Bytes")) for channel in channels) == count * flows * 8192
+        assert sum(int(pool.get(field)) for pool in pools) == write_bytes * flows
+    assert sum(int(channel.get("Host_Write_Bytes")) for channel in channels) == write_bytes * flows
     print(f"PASS {scheduler}/{case}: {count * flows} completions, {gc_programs} GC programs, {mapping_programs} mapping programs")
 
 

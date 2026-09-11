@@ -672,11 +672,34 @@ namespace SSD_Components
 			//The reserve protects allocation of a new block, not unused pages
 			//in this stream's current frontier. Blocking those pages can leave
 			//writes waiting forever when there are no invalid pages for GC.
-			const Block_Pool_Slot_Type* frontier = block_manager->Get_plane_bookkeeping_entry(transaction->Address)->Data_wf[streamID];
+			PlaneBookKeepingType* plane = block_manager->Get_plane_bookkeeping_entry(transaction->Address);
+			const Block_Pool_Slot_Type* frontier = plane->Data_wf[streamID];
+			bool borrow_gc_reserve = false;
 			if (frontier == NULL && ftl->GC_and_WL_Unit->Stop_servicing_writes(transaction->Address)) {
-				return false;
+				// At near-full occupancy, an overwrite can create the first invalid
+				// page only by using the last free block. Keep its remaining pages
+				// exclusively for GC, rather than allowing more host writes to take
+				// the relocation space. Never admit a first write this way.
+				if (ftl->GC_and_WL_Unit->Get_gc_policy() == GC_Block_Selection_Policy_Type::KV_THREE_GREEDY &&
+					ppa != NO_PPA && plane->Get_free_block_pool_size() == 1 &&
+					plane->Ongoing_erase_operations.empty() && plane->GC_wf[streamID] == NULL) {
+					NVM::FlashMemory::Physical_Page_Address old_address;
+					Convert_ppa_to_address(ppa, old_address);
+					if (old_address.ChannelID == transaction->Address.ChannelID && old_address.ChipID == transaction->Address.ChipID &&
+						old_address.DieID == transaction->Address.DieID && old_address.PlaneID == transaction->Address.PlaneID) {
+						const Block_Pool_Slot_Type& old_block = plane->Blocks[old_address.BlockID];
+						borrow_gc_reserve = old_block.Current_page_write_index == pages_no_per_block &&
+							!old_block.Has_ongoing_gc_wl && !old_block.Holds_mapping_data;
+					}
+				}
+				if (!borrow_gc_reserve) return false;
 			}
 			allocate_page_in_plane_for_user_write((NVM_Transaction_Flash_WR*)transaction, false);
+			if (borrow_gc_reserve) {
+				plane->GC_wf[streamID] = plane->Data_wf[streamID];
+				plane->Data_wf[streamID] = NULL;
+				ftl->GC_and_WL_Unit->Check_gc_required(plane->Get_free_block_pool_size(), transaction->Address);
+			}
 		}
 		transaction->Physical_address_determined = true;
 		//Both immediate translation and requests resumed after a CMT miss pass here.
@@ -849,10 +872,15 @@ namespace SSD_Components
 			transaction->Physical_address_determined = true;
 		} else {
 			if (!domains[transaction->Stream_id]->Mapping_entry_accessible(ideal_mapping_table, transaction->Stream_id, transaction->LPA)) {
-				if (!domains[transaction->Stream_id]->CMT->Check_free_slot_availability()) {
-					evict_cmt_entry(transaction->Stream_id);
+				// An outstanding mapping read may already own a WAITING slot.
+				// GC has the mapping from its data-page read; fill that reservation
+				// rather than evicting another entry and reserving the LPA twice.
+				if (!domains[transaction->Stream_id]->CMT->Is_slot_reserved_for_lpn_and_waiting(transaction->Stream_id, transaction->LPA)) {
+					if (!domains[transaction->Stream_id]->CMT->Check_free_slot_availability()) {
+						evict_cmt_entry(transaction->Stream_id);
+					}
+					domains[transaction->Stream_id]->CMT->Reserve_slot_for_lpn(transaction->Stream_id, transaction->LPA);
 				}
-				domains[transaction->Stream_id]->CMT->Reserve_slot_for_lpn(transaction->Stream_id, transaction->LPA);
 				domains[transaction->Stream_id]->CMT->Insert_new_mapping_info(transaction->Stream_id, transaction->LPA, Convert_address_to_ppa(transaction->Address), transaction->write_sectors_bitmap);
 			}
 
@@ -1598,8 +1626,21 @@ namespace SSD_Components
 		NVM::FlashMemory::Physical_Page_Address target;
 		allocate_plane_for_preconditioning(stream_id, mvpn, target);
 		PlaneBookKeepingType* plane = block_manager->Get_plane_bookkeeping_entry(target);
-		if (plane->Translation_wf[stream_id] == NULL &&
-			plane->Get_free_block_pool_size() <= plane->Ongoing_erase_operations.size()) {
+		bool wait_for_space = plane->Translation_wf[stream_id] == NULL &&
+			plane->Get_free_block_pool_size() <= plane->Ongoing_erase_operations.size();
+		if (plane->Translation_wf[stream_id] != NULL && plane->Get_free_block_pool_size() == 0) {
+			// A zero-free-block GC selected this existing mapping frontier as
+			// its destination. Ordinary writebacks must not consume its budget.
+			unsigned int relocation_pages = 0;
+			for (auto block_id : plane->Ongoing_erase_operations) {
+				const Block_Pool_Slot_Type& victim = plane->Blocks[block_id];
+				if (victim.Holds_mapping_data && victim.Stream_id == stream_id) {
+					relocation_pages += victim.Current_page_write_index - victim.Invalid_page_count;
+				}
+			}
+			wait_for_space = pages_no_per_block - plane->Translation_wf[stream_id]->Current_page_write_index <= relocation_pages;
+		}
+		if (wait_for_space) {
 			domains[stream_id]->Mapping_writebacks_waiting_for_space[mvpn] = lpn;
 			ftl->GC_and_WL_Unit->Check_gc_required(plane->Get_free_block_pool_size(), target);
 			return;

@@ -92,6 +92,18 @@ namespace SSD_Components
 						if ((candidate.Current_page_write_index != pages_no_per_block &&
 							candidate.Invalid_page_count != candidate.Current_page_write_index) || candidate.Invalid_page_count == 0 ||
 							!is_safe_gc_wl_candidate(pbke, block_id)) continue;
+						// With no free blocks, relocation must fit in an existing
+						// destination. In particular a near-full overwrite may have
+						// handed the remainder of its block to this stream's GC.
+						if (pbke->Get_free_block_pool_size() == 0) {
+							const unsigned int live_pages = candidate.Current_page_write_index - candidate.Invalid_page_count;
+							// Do not promise the same frontier pages to two concurrent victims.
+							if (live_pages != 0 && !pbke->Ongoing_erase_operations.empty()) continue;
+							Block_Pool_Slot_Type* destination = candidate.Holds_mapping_data
+								? pbke->Translation_wf[candidate.Stream_id] : pbke->GC_wf[candidate.Stream_id];
+							unsigned int room = destination == NULL ? 0 : pages_no_per_block - destination->Current_page_write_index;
+							if (live_pages > room) continue;
+						}
 						if (!found) {
 							gc_candidate_block_id = block_id;
 							found = true;

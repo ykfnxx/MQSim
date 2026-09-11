@@ -130,7 +130,20 @@ namespace SSD_Components
 			PRINT_ERROR("Inconsistent status in the plane bookkeeping record!")
 		}
 		if (Free_pages_count == 0) {
-			PRINT_ERROR("Plane " << "@" << plane_address.ChannelID << "@" << plane_address.ChipID << "@" << plane_address.DieID << "@" << plane_address.PlaneID << " pool size: " << Get_free_block_pool_size() << " ran out of free pages! Bad resource management! It is not safe to continue simulation!");
+			// The last relocation can consume the final free page immediately
+			// before its victim is erased. This is safe only if an ongoing erase
+			// already has no valid pages left to relocate.
+			bool erase_can_release_space = false;
+			for (auto block_id : Ongoing_erase_operations) {
+				const Block_Pool_Slot_Type& victim = Blocks[block_id];
+				if (victim.Current_page_write_index > 0 && victim.Invalid_page_count == victim.Current_page_write_index) {
+					erase_can_release_space = true;
+					break;
+				}
+			}
+			if (!erase_can_release_space) {
+				PRINT_ERROR("Plane " << "@" << plane_address.ChannelID << "@" << plane_address.ChipID << "@" << plane_address.DieID << "@" << plane_address.PlaneID << " pool size: " << Get_free_block_pool_size() << " ran out of free pages! Bad resource management! It is not safe to continue simulation!");
+			}
 		}
 	}
 
