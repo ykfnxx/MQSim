@@ -103,6 +103,11 @@ namespace SSD_Components
 					}
 				}
 
+				// A previously unsafe victim may now be idle, or a GC frontier may
+				// have become entirely invalid while these writes were in flight.
+				if (_my_instance->address_mapping_unit->Has_writes_waiting_for_space(transaction->Address)) {
+					_my_instance->Check_gc_required(pbke->Get_free_block_pool_size(), transaction->Address);
+				}
 				return;
 		}
 

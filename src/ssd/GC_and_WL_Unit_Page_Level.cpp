@@ -50,6 +50,24 @@ namespace SSD_Components
 				return;
 			}
 
+			// A partially filled GC destination can become entirely invalid after
+			// host overwrites. Keeping it as a frontier forever can strand the last
+			// reclaimable block at the reserve. Only retire it after all relocation
+			// operations have drained (GC programs do not use the user counters).
+			if (block_selection_policy == GC_Block_Selection_Policy_Type::KV_THREE_GREEDY &&
+				address_mapping_unit->Has_writes_waiting_for_space(plane_address) &&
+				pbke->Ongoing_erase_operations.empty()) {
+				for (unsigned int stream = 0; stream < address_mapping_unit->Get_no_of_input_streams(); ++stream) {
+					Block_Pool_Slot_Type* frontier = pbke->GC_wf[stream];
+					if (frontier != NULL && frontier->Current_page_write_index > 0 &&
+						frontier->Invalid_page_count == frontier->Current_page_write_index &&
+						frontier->Ongoing_user_read_count == 0 && frontier->Ongoing_user_program_count == 0 &&
+						!frontier->Has_ongoing_gc_wl) {
+						pbke->GC_wf[stream] = NULL;
+					}
+				}
+			}
+
 			switch (block_selection_policy) {
 				case SSD_Components::GC_Block_Selection_Policy_Type::GREEDY://Find the set of blocks with maximum number of invalid pages and no free pages
 				{
@@ -71,7 +89,8 @@ namespace SSD_Components
 					bool found = false;
 					for (flash_block_ID_type block_id = 0; block_id < block_no_per_plane; ++block_id) {
 						Block_Pool_Slot_Type& candidate = pbke->Blocks[block_id];
-						if (candidate.Current_page_write_index != pages_no_per_block || candidate.Invalid_page_count == 0 ||
+						if ((candidate.Current_page_write_index != pages_no_per_block &&
+							candidate.Invalid_page_count != candidate.Current_page_write_index) || candidate.Invalid_page_count == 0 ||
 							!is_safe_gc_wl_candidate(pbke, block_id)) continue;
 						if (!found) {
 							gc_candidate_block_id = block_id;

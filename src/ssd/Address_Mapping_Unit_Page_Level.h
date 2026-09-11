@@ -106,6 +106,7 @@ namespace SSD_Components
 		std::multimap<LPA_type, NVM_Transaction_Flash*> Waiting_unmapped_program_transactions;
 		std::multimap<MVPN_type, LPA_type> ArrivingMappingEntries;
 		std::set<MVPN_type> DepartingMappingEntries;
+		std::map<MVPN_type, LPA_type> Mapping_writebacks_waiting_for_space;
 		std::set<LPA_type> Locked_LPAs;//Used to manage race conditions, i.e. a user request accesses and LPA while GC is moving that LPA 
 		std::set<MVPN_type> Locked_MVPNs;//Used to manage race conditions
 		std::multimap<LPA_type, NVM_Transaction_Flash*> Read_transactions_behind_LPA_barrier;
@@ -157,6 +158,7 @@ namespace SSD_Components
 		void Get_translation_mapping_info_for_gc(const stream_id_type stream_id, const MVPN_type mvpn, MPPN_type& mppa, sim_time_type& timestamp);
 		void Allocate_new_page_for_gc(NVM_Transaction_Flash_WR* transaction, bool is_translation_page);
 		bool Is_drained() const;
+		bool Has_writes_waiting_for_space(const NVM::FlashMemory::Physical_Page_Address& plane_address) const override;
 
 		void Store_mapping_table_on_flash_at_start();
 		LPA_type Get_logical_pages_count(stream_id_type stream_id);
@@ -180,7 +182,7 @@ namespace SSD_Components
 		void allocate_page_in_plane_for_user_write(NVM_Transaction_Flash_WR* transaction, bool is_for_gc);
 		void allocate_plane_for_translation_write(NVM_Transaction_Flash* transaction);
 		void allocate_page_in_plane_for_translation_write(NVM_Transaction_Flash* transaction, MVPN_type mvpn, bool is_for_gc);
-		void allocate_plane_for_preconditioning(stream_id_type stream_id, LPA_type lpn, NVM::FlashMemory::Physical_Page_Address& targetAddress);
+		void allocate_plane_for_preconditioning(stream_id_type stream_id, LPA_type lpn, NVM::FlashMemory::Physical_Page_Address& targetAddress) const;
 		bool request_mapping_entry(const stream_id_type streamID, const LPA_type lpn);
 		static void handle_transaction_serviced_signal_from_PHY(NVM_Transaction_Flash* transaction);
 		bool translate_lpa_to_ppa(stream_id_type streamID, NVM_Transaction_Flash* transaction);

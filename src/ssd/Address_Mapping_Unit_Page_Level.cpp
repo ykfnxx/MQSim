@@ -431,6 +431,7 @@ namespace SSD_Components
 			report("Waiting_unmapped_program_transactions", domain->Waiting_unmapped_program_transactions.size());
 			report("ArrivingMappingEntries", domain->ArrivingMappingEntries.size());
 			report("DepartingMappingEntries", domain->DepartingMappingEntries.size());
+			report("Mapping_writebacks_waiting_for_space", domain->Mapping_writebacks_waiting_for_space.size());
 			report("Locked_LPAs", domain->Locked_LPAs.size());
 			report("Locked_MVPNs", domain->Locked_MVPNs.size());
 			report("Read_transactions_behind_LPA_barrier", domain->Read_transactions_behind_LPA_barrier.size());
@@ -882,7 +883,7 @@ namespace SSD_Components
 		}
 	}
 
-	void Address_Mapping_Unit_Page_Level::allocate_plane_for_preconditioning(stream_id_type stream_id, LPA_type lpn, NVM::FlashMemory::Physical_Page_Address& targetAddress)
+	void Address_Mapping_Unit_Page_Level::allocate_plane_for_preconditioning(stream_id_type stream_id, LPA_type lpn, NVM::FlashMemory::Physical_Page_Address& targetAddress) const
 	{
 		AddressMappingDomain* domain = domains[stream_id];
 
@@ -1551,7 +1552,8 @@ namespace SSD_Components
 
 		/*MQSim assumes that the data of all departing (evicted from CMT) translation pages are in memory, until
 		the flash program operation finishes and the entry it is cleared from DepartingMappingEntries.*/
-		if (domain->DepartingMappingEntries.find(mvpn) != domain->DepartingMappingEntries.end()) {
+		if (domain->DepartingMappingEntries.find(mvpn) != domain->DepartingMappingEntries.end() ||
+			domain->Mapping_writebacks_waiting_for_space.count(mvpn) != 0) {
 			if (!domain->CMT->Check_free_slot_availability()) {
 				evict_cmt_entry(stream_id);
 			}
@@ -1590,6 +1592,19 @@ namespace SSD_Components
 	void Address_Mapping_Unit_Page_Level::generate_flash_writeback_request_for_mapping_data(const stream_id_type stream_id, const LPA_type lpn)
 	{
 		MVPN_type mvpn = get_MVPN(lpn, stream_id);
+		// Keep the evicted mapping in the existing in-memory writeback model
+		// until a destination exists. Do not invalidate its old flash page or
+		// issue a merge read before we can allocate the replacement.
+		NVM::FlashMemory::Physical_Page_Address target;
+		allocate_plane_for_preconditioning(stream_id, mvpn, target);
+		PlaneBookKeepingType* plane = block_manager->Get_plane_bookkeeping_entry(target);
+		if (plane->Translation_wf[stream_id] == NULL &&
+			plane->Get_free_block_pool_size() <= plane->Ongoing_erase_operations.size()) {
+			domains[stream_id]->Mapping_writebacks_waiting_for_space[mvpn] = lpn;
+			ftl->GC_and_WL_Unit->Check_gc_required(plane->Get_free_block_pool_size(), target);
+			return;
+		}
+		domains[stream_id]->Mapping_writebacks_waiting_for_space.erase(mvpn);
 		if (is_mvpn_locked_for_gc(stream_id, mvpn)) {
 			manage_mapping_transaction_facing_barrier(stream_id, mvpn, false);
 			domains[stream_id]->DepartingMappingEntries.insert(get_MVPN(lpn, stream_id));
@@ -1955,10 +1970,38 @@ namespace SSD_Components
 	{
 		//Currently, the only unsuccessfull translation would be for program translations that are accessing a plane that is running out of free pages
 		Write_transactions_for_overfull_planes[transaction->Address.ChannelID][transaction->Address.ChipID][transaction->Address.DieID][transaction->Address.PlaneID].insert((NVM_Transaction_Flash_WR*)transaction);
+		ftl->GC_and_WL_Unit->Check_gc_required(block_manager->Get_pool_size(transaction->Address), transaction->Address);
+	}
+
+	bool Address_Mapping_Unit_Page_Level::Has_writes_waiting_for_space(const NVM::FlashMemory::Physical_Page_Address& plane_address) const
+	{
+		if (!Write_transactions_for_overfull_planes[plane_address.ChannelID][plane_address.ChipID][plane_address.DieID][plane_address.PlaneID].empty()) return true;
+		for (unsigned int stream = 0; stream < no_of_input_streams; ++stream) {
+			for (const auto& entry : domains[stream]->Mapping_writebacks_waiting_for_space) {
+				NVM::FlashMemory::Physical_Page_Address target;
+				allocate_plane_for_preconditioning(stream, entry.first, target);
+				if (target.ChannelID == plane_address.ChannelID && target.ChipID == plane_address.ChipID &&
+					target.DieID == plane_address.DieID && target.PlaneID == plane_address.PlaneID) return true;
+			}
+		}
+		return false;
 	}
 
 	void Address_Mapping_Unit_Page_Level::Start_servicing_writes_for_overfull_plane(const NVM::FlashMemory::Physical_Page_Address plane_address)
 	{
+		// Mapping writebacks must also be retried when an erase returns space.
+		// Detach each entry before retrying: it may queue again or hit a GC barrier.
+		for (unsigned int stream = 0; stream < no_of_input_streams; ++stream) {
+			const auto pending = domains[stream]->Mapping_writebacks_waiting_for_space;
+			for (const auto& entry : pending) {
+				NVM::FlashMemory::Physical_Page_Address target;
+				allocate_plane_for_preconditioning(stream, entry.first, target);
+				if (target.ChannelID != plane_address.ChannelID || target.ChipID != plane_address.ChipID ||
+					target.DieID != plane_address.DieID || target.PlaneID != plane_address.PlaneID) continue;
+				domains[stream]->Mapping_writebacks_waiting_for_space.erase(entry.first);
+				generate_flash_writeback_request_for_mapping_data(stream, entry.second);
+			}
+		}
 		std::set<NVM_Transaction_Flash_WR*>& waiting_write_list = Write_transactions_for_overfull_planes[plane_address.ChannelID][plane_address.ChipID][plane_address.DieID][plane_address.PlaneID];
 
 		//Waiting for GC can outlive the CMT entry. Re-enter translation and detach

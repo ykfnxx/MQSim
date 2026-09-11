@@ -74,6 +74,47 @@ to complete, mapping programs to occur, and TSU queues to drain. The fix permits
 use of the requesting stream's existing frontier; allocating a new frontier
 still obeys the GC reserve.
 
+`test_overfull_gc.py` adds eight tight-capacity cases (four workloads under
+both schedulers), also run by `test_vnext.sh`:
+
+- 208 live pages in a 16-block x 16-page plane, followed by overwrites: the
+  original 5,000-write burst leaves four overfull AMU waiters at `4b2a98b`;
+- the 512-write prefix, which requests a mapping block from an empty pool;
+- 192 live pages with 5,000 writes spaced 1 ms apart;
+- two flows sharing a 64-byte CMT across six channels and two media pools.
+
+These use independently derived request IDs, dependency ordering, completed
+write counts and bytes, plus NAND/TSU/pool/channel conservation checks. They
+require actual GC and mapping programs; they do not bless new output by
+updating a snapshot. Legacy mapping counters can include writebacks folded
+into a GC mapping relocation, so separate physical mapping programs are
+counted from TSU submissions for the NAND conservation assertion.
+
+The repair retires an entirely invalid GC frontier only under space pressure
+and after its plane's relocation operations and the block's user I/O drain.
+The partial block then goes through normal GC erase, not an in-place reset.
+Mapping writeback waits before invalidating its old flash page if allocating
+a new mapping block would consume the blocks reserved for ongoing GC. Erase
+completion retries those writebacks before host space waiters. The pending
+mapping-writeback container is included in the fatal AMU drain check.
+
+Run the focused suite or compare an older binary with:
+
+```bash
+python3 tests/dwpdsim_vnext/test_overfull_gc.py --binary ./MQSim
+python3 tests/dwpdsim_vnext/test_overfull_gc.py --binary /path/to/old/MQSim --case gc-frontier-burst
+```
+
+This is a finite-headroom liveness regression, not a guarantee that every
+advertised logical-capacity configuration has enough physical space for all
+per-stream data, mapping and GC frontiers at full occupancy. In particular,
+the 224-live-page / 256-physical-page overwrite probe still stalls: after
+initial fill there is no user frontier, the mapping frontier occupies a
+block, and the final free block is reserved. Unlike the 208-page reproducer,
+there is no invalid GC frontier to reclaim. That capacity/admission boundary
+is not repaired by this change (the existing 224-write first-fill test still
+passes).
+
 `test_waiting_cmt.py` exercises six/eight flows sharing a 64-byte CMT with
 8,192 pages per flow and 100,000 burst I/Os under both schedulers. Before the
 fix, the six-flow seed-321 case ended with three unmapped writes on stream 3
