@@ -45,25 +45,27 @@ namespace SSD_Components
 		if (free_block_pool_size <= block_pool_gc_threshold) {
 			flash_block_ID_type gc_candidate_block_id = block_manager->Get_coldest_block_id(plane_address);
 			PlaneBookKeepingType* pbke = block_manager->Get_plane_bookkeeping_entry(plane_address);
+			bool compact_frontier = false;
 
 			if (pbke->Ongoing_erase_operations.size() >= max_ongoing_gc_reqs_per_plane) {
 				return;
 			}
 
-			// A partially filled GC destination can become entirely invalid after
-			// host overwrites. Keeping it as a frontier forever can strand the last
-			// reclaimable block at the reserve. Only retire it after all relocation
-			// operations have drained (GC programs do not use the user counters).
+			// A partially filled frontier may have no live pages left. Retire it
+			// after I/O drains so normal GC can erase it without a destination.
 			if (block_selection_policy == GC_Block_Selection_Policy_Type::KV_THREE_GREEDY &&
 				address_mapping_unit->Has_writes_waiting_for_space(plane_address) &&
 				pbke->Ongoing_erase_operations.empty()) {
 				for (unsigned int stream = 0; stream < address_mapping_unit->Get_no_of_input_streams(); ++stream) {
-					Block_Pool_Slot_Type* frontier = pbke->GC_wf[stream];
-					if (frontier != NULL && frontier->Current_page_write_index > 0 &&
-						frontier->Invalid_page_count == frontier->Current_page_write_index &&
-						frontier->Ongoing_user_read_count == 0 && frontier->Ongoing_user_program_count == 0 &&
-						!frontier->Has_ongoing_gc_wl) {
-						pbke->GC_wf[stream] = NULL;
+					Block_Pool_Slot_Type** frontiers[] = {&pbke->Data_wf[stream], &pbke->GC_wf[stream], &pbke->Translation_wf[stream]};
+					for (auto slot : frontiers) {
+						Block_Pool_Slot_Type* frontier = *slot;
+						if (frontier != NULL && frontier->Current_page_write_index > 0 &&
+							frontier->Invalid_page_count == frontier->Current_page_write_index &&
+							frontier->Ongoing_user_read_count == 0 && frontier->Ongoing_user_program_count == 0 &&
+							!frontier->Has_ongoing_gc_wl) {
+							*slot = NULL;
+						}
 					}
 				}
 			}
@@ -114,6 +116,30 @@ namespace SSD_Components
 							(candidate.Invalid_page_count == best.Invalid_page_count && candidate.Last_write_time < best.Last_write_time) ||
 							(candidate.Invalid_page_count == best.Invalid_page_count && candidate.Last_write_time == best.Last_write_time &&
 							 candidate.Erase_count < best.Erase_count)) gc_candidate_block_id = block_id;
+					}
+					// When ordinary victims are exhausted, two idle data frontiers
+					// of the same stream may still fit in one block. Move only when
+					// the existing destination can hold every live source page;
+					// this returns a whole block without allocating a new destination.
+					if (!found && pbke->Ongoing_erase_operations.empty() &&
+						address_mapping_unit->Has_writes_waiting_for_space(plane_address)) {
+						for (unsigned int stream = 0; stream < address_mapping_unit->Get_no_of_input_streams(); ++stream) {
+							Block_Pool_Slot_Type* data = pbke->Data_wf[stream];
+							Block_Pool_Slot_Type* gc = pbke->GC_wf[stream];
+							if (data == NULL || gc == NULL || data->Has_ongoing_gc_wl || gc->Has_ongoing_gc_wl ||
+								data->Ongoing_user_program_count != 0 || gc->Ongoing_user_program_count != 0 ||
+								data->Ongoing_user_read_count != 0 || gc->Ongoing_user_read_count != 0) continue;
+							if (data->Current_page_write_index - data->Invalid_page_count <= pages_no_per_block - gc->Current_page_write_index) {
+								gc_candidate_block_id = data->BlockID;
+								pbke->Data_wf[stream] = NULL;
+							} else if (gc->Current_page_write_index - gc->Invalid_page_count <= pages_no_per_block - data->Current_page_write_index) {
+								gc_candidate_block_id = gc->BlockID;
+								pbke->GC_wf[stream] = data;
+								pbke->Data_wf[stream] = NULL;
+							} else continue;
+							found = compact_frontier = true;
+							break;
+						}
 					}
 					if (!found) return;
 					break;
@@ -192,7 +218,7 @@ namespace SSD_Components
 			Block_Pool_Slot_Type* block = &pbke->Blocks[gc_candidate_block_id];
 
 			//No invalid page to erase
-			if (block->Current_page_write_index == 0 || block->Invalid_page_count == 0) {
+			if (block->Current_page_write_index == 0 || (!compact_frontier && block->Invalid_page_count == 0)) {
 				return;
 			}
 			

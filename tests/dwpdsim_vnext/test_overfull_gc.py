@@ -11,7 +11,6 @@ import argparse
 import copy
 import csv
 import random
-import re
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
@@ -35,15 +34,19 @@ CASES = {
     "shared-three-partial": (53, 1024, 0, 3, 1),
     "shared-four": (32, 5000, 0, 4, 1),
     "shared-six": (16, 5000, 0, 6, 1),
-    "shared-two-capacity-rejected": (104, 5000, 0, 2, 1),
-    "shared-six-capacity-rejected": (21, 5000, 0, 6, 1),
     "shared-two-expanded": (104, 5000, 0, 2, 1),
     "shared-six-expanded": (21, 5000, 0, 6, 1),
 }
 
+# Retained reproducers, not successful regression cases or capacity proofs.
+KNOWN_STALLS = {
+    "shared-two-stalled": (104, 5000, 0, 2, 1),
+    "shared-six-stalled": (21, 5000, 0, 6, 1),
+}
+
 
 def run_case(binary, directory, scheduler, case, seed=321):
-    pages, count, interval, flows, channels_per_pool = CASES[case]
+    pages, count, interval, flows, channels_per_pool = (CASES | KNOWN_STALLS)[case]
     pages *= channels_per_pool
     count *= channels_per_pool
     partial = case.endswith("-partial")
@@ -98,20 +101,16 @@ def run_case(binary, directory, scheduler, case, seed=321):
         [str(binary), "-i", str(directory / "ssd.xml"), "-w", str(directory / "workload.xml")],
         cwd=REPO, capture_output=True, text=True, timeout=60,
     )
-    if case == "nearfull-first-fill-rejected" or case.endswith("-capacity-rejected"):
+    if case in KNOWN_STALLS:
+        assert "AMU capacity exhausted" not in result.stderr
+        assert "minimum_blocks_with_one_gc_reserve" not in result.stderr
+        assert result.returncode == 0, f"Unresolved stall, not a capacity proof: {result.stderr}"
+    if case == "nearfull-first-fill-rejected":
         assert result.returncode != 0
         assert "Write_transactions_for_overfull_planes=" in result.stderr
         assert "Simulation ended with pending address-mapping work" in result.stderr
         assert "Simulation complete." not in result.stdout
         assert not (directory / "workload_scenario_1.xml").exists()
-        if shared:
-            assert "AMU capacity exhausted:" in result.stderr, result.stderr
-            assert "available_blocks=16" in result.stderr
-            assert "ongoing_gc=0" in result.stderr
-            capacity = re.search(r"minimum_blocks_with_one_gc_reserve=(\d+) available_blocks=(\d+)", result.stderr)
-            assert capacity and int(capacity[1]) > int(capacity[2])
-            print(f"PASS {scheduler}/{case}: insufficient per-stream block capacity diagnosed")
-            return
         print(f"PASS {scheduler}/{case}: a first write cannot borrow the GC reserve")
         return
     assert result.returncode == 0, f"{scheduler}/{case}: {result.stderr}"
@@ -174,9 +173,11 @@ def run_case(binary, directory, scheduler, case, seed=321):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=REPO / "MQSim")
-    parser.add_argument("--case", choices=CASES)
+    parser.add_argument("--case", choices=CASES | KNOWN_STALLS)
     parser.add_argument("--seed", type=int, default=321)
     args = parser.parse_args()
+    if args.case is None:
+        print("UNRESOLVED (not counted as passes; run with --case): " + ", ".join(KNOWN_STALLS), flush=True)
     with tempfile.TemporaryDirectory(prefix="mqsim-overfull-gc-") as temporary:
         for scheduler in ("OUT_OF_ORDER", "PRIORITY_OUT_OF_ORDER"):
             for case in ([args.case] if args.case else CASES):

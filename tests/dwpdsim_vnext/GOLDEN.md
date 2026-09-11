@@ -141,9 +141,9 @@ requires exact host accounting, real mapping I/O and full drain. Completion
 now recreates missing reservations for actual waiters, preserving an already
 valid mapping if present; merge-only reads do not populate the cache.
 
-The overfull suite also covers shared-plane fragmentation (38 checks total,
+The overfull suite also covers shared-plane fragmentation (34 default checks,
 including both schedulers): two, three, four and six active SLC flows with a
-64-byte CMT, burst, spaced and partial writes, and capacity-negative/expanded pairs.
+64-byte CMT, burst, spaced and partial writes, and expanded-capacity controls.
 The three-flow case (53 live pages per flow, 16 blocks x 16 pages) stalls on
 `8f777cb` despite having enough physical blocks. At the GC reserve, an idle GC
 data frontier is now transferred to the same stream's host frontier, only if
@@ -151,23 +151,32 @@ no relocation is ongoing and at least one free block remains. The two pointers
 never alias. Mapping writeback also preserves the last free block even when
 no GC is currently running. Neither change disables drain checks.
 
-Logical page capacity alone does not guarantee a feasible multi-flow layout:
-data and mapping blocks are owned by individual streams. Two streams with
-104 data pages each require at least 14 data blocks, two mapping blocks and
-one GC reserve: 17 blocks, not 16. Six streams with 21 pages each similarly
-require at least 19 blocks. These configurations remain rejected, with an
-`AMU capacity exhausted` diagnostic rather than being treated as successful
-simulations. The diagnostic reports a lower bound from resident pages and
-distinct pending first writes, free blocks/pages and ongoing GC; it contains
-no logical addresses or trace data. It is a drain-time diagnostic, not a
-startup admission check or a proof that every layout below the bound is live.
-The same traces pass with 32 physical blocks and unchanged logical capacity,
-timing and GC latency. Tests require exact completion IDs, dependencies and
-host bytes, physical program conservation and empty TSU queues, and require
-that rejected runs do not produce result XML. No golden snapshots are updated.
+The former `minimum_blocks_with_one_gc_reserve` calculation and `AMU capacity
+exhausted` conclusion are removed. An extra whole GC block is not a proof of
+physical necessity: a victim can fit in an existing destination, freeing a
+block for the next collection. `AMU space` now reports only observed free
+blocks/pages and ongoing GC. The two-flow/104-page and six-flow/21-page
+no-TRIM traces still stall at 16 blocks. They are unresolved reproducers,
+not capacity-negative successes: invoke them explicitly with `--case
+shared-two-stalled` or `--case shared-six-stalled`; a stall fails the test.
+They are excluded from the default passing suite, not declared fixed.
+
+`test_frontier_compaction.py` adds 12 public trace checks under both schedulers.
+Two flows share the unchanged 16-block plane. Flow 0 writes 104 pages, makes
+zero/20/60 overwrites and trims its last eight pages; flow 1 then writes 104
+pages through explicit dependencies. `e936f80` stalls. An entirely invalid
+idle frontier is now eligible for normal erase, and when no ordinary victim
+exists, two idle data/GC frontiers of the same stream can be compacted if all
+live source pages fit in the existing destination. The source is detached,
+the destination remains GC-owned until relocation drains, and ordinary
+read/program/erase transactions perform the move. No new destination block,
+cross-stream sharing, capacity change or synthetic completion is introduced.
+Tests require exact request IDs, dependencies, host bytes, effective TRIM,
+physical program conservation and drained TSU queues. This is a proven
+frontier-selection repair, not a claim to fix the unresolved no-TRIM traces.
 
 ```bash
 python3 tests/dwpdsim_vnext/test_overfull_gc.py --case shared-three
-python3 tests/dwpdsim_vnext/test_overfull_gc.py --case shared-two-capacity-rejected
+python3 tests/dwpdsim_vnext/test_frontier_compaction.py
 python3 tests/dwpdsim_vnext/test_overfull_gc.py --case shared-two-expanded
 ```

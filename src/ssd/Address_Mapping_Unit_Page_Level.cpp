@@ -451,41 +451,9 @@ namespace SSD_Components
 							NVM::FlashMemory::Physical_Page_Address address;
 							address.ChannelID = channel; address.ChipID = chip; address.DieID = die; address.PlaneID = plane;
 							const PlaneBookKeepingType* state = block_manager->Get_plane_bookkeeping_entry(address);
-							std::vector<unsigned int> data_pages(no_of_input_streams, 0), mapping_pages(no_of_input_streams, 0);
-							for (unsigned int block_id = 0; block_id < block_no_per_plane; ++block_id) {
-								const Block_Pool_Slot_Type& block = state->Blocks[block_id];
-								const unsigned int live = block.Current_page_write_index - block.Invalid_page_count;
-								if (live == 0) continue;
-								(block.Holds_mapping_data ? mapping_pages : data_pages)[block.Stream_id] += live;
-							}
-							// Include distinct first writes already waiting on this plane, not
-							// overwrites (nor requests that have not arrived). Read the current
-							// CMT value when present; the backing GMT may be stale until eviction.
-							std::set<std::pair<stream_id_type, LPA_type>> first_writes;
-							for (const auto* transaction : Write_transactions_for_overfull_planes[channel][chip][die][plane]) {
-								AddressMappingDomain* domain = domains[transaction->Stream_id];
-								PPA_type ppa = domain->GlobalMappingTable[transaction->LPA].PPA;
-								if (!ideal_mapping_table && domain->CMT->Exists(transaction->Stream_id, transaction->LPA) &&
-									!domain->CMT->Is_slot_reserved_for_lpn_and_waiting(transaction->Stream_id, transaction->LPA)) {
-									ppa = domain->CMT->Retrieve_ppa(transaction->Stream_id, transaction->LPA);
-								}
-								if (ppa == NO_PPA) first_writes.insert(std::make_pair(transaction->Stream_id, transaction->LPA));
-							}
-							for (const auto& entry : first_writes) ++data_pages[entry.first];
-							unsigned int minimum_blocks = 1; // At least one whole block for relocation.
-							for (unsigned int stream = 0; stream < no_of_input_streams; ++stream) {
-								minimum_blocks += (data_pages[stream] + pages_no_per_block - 1) / pages_no_per_block;
-								minimum_blocks += (mapping_pages[stream] + pages_no_per_block - 1) / pages_no_per_block;
-							}
 							std::cerr << "AMU space: channel=" << channel << " chip=" << chip << " die=" << die << " plane=" << plane
 								<< " free_blocks=" << state->Free_block_pool.size() << " free_pages=" << state->Free_pages_count
-								<< " ongoing_gc=" << state->Ongoing_erase_operations.size()
-								<< " minimum_blocks_with_one_gc_reserve=" << minimum_blocks
-								<< " available_blocks=" << block_no_per_plane << std::endl;
-							if (minimum_blocks > block_no_per_plane) {
-								std::cerr << "AMU capacity exhausted: per-stream data/mapping blocks and one GC reserve exceed plane capacity; "
-									<< "increase physical blocks or reduce live data/flows sharing this plane" << std::endl;
-							}
+								<< " ongoing_gc=" << state->Ongoing_erase_operations.size() << std::endl;
 						}
 		return drained;
 	}
