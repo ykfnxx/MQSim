@@ -1659,7 +1659,8 @@ namespace SSD_Components
 			unsigned int relocation_pages = 0;
 			for (auto block_id : plane->Ongoing_erase_operations) {
 				const Block_Pool_Slot_Type& victim = plane->Blocks[block_id];
-				if (victim.Holds_mapping_data && victim.Stream_id == stream_id) {
+				if (victim.Holds_mapping_data && (victim.Stream_id == stream_id ||
+					ftl->GC_and_WL_Unit->Get_gc_policy() == GC_Block_Selection_Policy_Type::KV_THREE_GREEDY)) {
 					relocation_pages += victim.Current_page_write_index - victim.Invalid_page_count;
 				}
 			}
@@ -1889,16 +1890,17 @@ namespace SSD_Components
 				if (block_manager->Is_page_valid(block, pageID)) {
 					addr.PageID = pageID;
 					if (block->Holds_mapping_data) {
+						const stream_id_type owner = block->Get_page_stream_id(pageID);
 						MVPN_type mpvn = (MVPN_type)flash_controller->Get_metadata(addr.ChannelID, addr.ChipID, addr.DieID, addr.PlaneID, addr.BlockID, addr.PageID);
-						if (mpvn == NO_LPA || mpvn >= domains[block->Stream_id]->Total_translation_pages_no) {
-							block_manager->Invalidate_page_in_block(block->Stream_id, addr);
+						if (mpvn == NO_LPA || mpvn >= domains[owner]->Total_translation_pages_no) {
+							block_manager->Invalidate_page_in_block(owner, addr);
 							continue;
 						}
-						if (domains[block->Stream_id]->GlobalTranslationDirectory[mpvn].MPPN != Convert_address_to_ppa(addr)) {
-							block_manager->Invalidate_page_in_block(block->Stream_id, addr);
+						if (domains[owner]->GlobalTranslationDirectory[mpvn].MPPN != Convert_address_to_ppa(addr)) {
+							block_manager->Invalidate_page_in_block(owner, addr);
 							continue;
 					}
-                    Set_barrier_for_accessing_mvpn(block->Stream_id, mpvn);
+						Set_barrier_for_accessing_mvpn(owner, mpvn);
 					} else {
 						LPA_type lpa = flash_controller->Get_metadata(addr.ChannelID, addr.ChipID, addr.DieID, addr.PlaneID, addr.BlockID, addr.PageID);
 						if (lpa == NO_LPA || lpa >= domains[block->Stream_id]->Total_logical_pages_no) {

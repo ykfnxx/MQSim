@@ -41,6 +41,12 @@ namespace SSD_Components
 		uint64_t* Invalid_page_bitmap;//A bit sequence that keeps track of valid/invalid status of pages in the block. A "0" means valid, and a "1" means invalid.
 		stream_id_type Stream_id = NO_STREAM;
 		bool Holds_mapping_data = false;
+		// Mapping blocks may contain pages from several streams. Data blocks
+		// retain their single block owner; allocate this vector only for mappings.
+		std::vector<stream_id_type> Mapping_page_streams;
+		stream_id_type Get_page_stream_id(flash_page_ID_type page) const {
+			return Holds_mapping_data ? Mapping_page_streams.at(page) : Stream_id;
+		}
 		bool Has_ongoing_gc_wl = false;
 		NVM_Transaction_Flash_ER* Erase_transaction;
 		bool Hot_block = false;//Used for hot/cold separation mentioned in the "On the necessity of hot and cold data identification to reduce the write amplification in flash-based SSDs", Perf. Eval., 2014.

@@ -107,11 +107,24 @@ namespace SSD_Components
 	{
 		PlaneBookKeepingType *plane_record = &plane_manager[page_address.ChannelID][page_address.ChipID][page_address.DieID][page_address.PlaneID];
 		const bool allocated_frontier = plane_record->Translation_wf[streamID] == NULL;
-		if (plane_record->Translation_wf[streamID] == NULL) plane_record->Translation_wf[streamID] = plane_record->Get_a_free_block(streamID, true);
+		const bool shared_mapping = gc_and_wl_unit->Get_gc_policy() == GC_Block_Selection_Policy_Type::KV_THREE_GREEDY;
+		if (allocated_frontier) {
+			Block_Pool_Slot_Type* frontier = plane_record->Get_a_free_block(streamID, true);
+			plane_record->Translation_wf[streamID] = frontier;
+			if (shared_mapping) {
+				// All slots in this plane alias one mapping frontier, including
+				// streams that have not written mappings yet. AMU space checks
+				// therefore see existing room before requesting a new block.
+				for (unsigned int stream = 0; stream < total_concurrent_streams_no; ++stream) {
+					plane_record->Translation_wf[stream] = frontier;
+				}
+			}
+		}
 		plane_record->Valid_pages_count++;
 		plane_record->Free_pages_count--;
 		page_address.BlockID = plane_record->Translation_wf[streamID]->BlockID;
 		page_address.PageID = plane_record->Translation_wf[streamID]->Current_page_write_index++;
+		plane_record->Translation_wf[streamID]->Mapping_page_streams.push_back(streamID);
 		//GC completion does not decrement the ordinary program counter.
 		if (is_for_gc) {
 			plane_record->Translation_wf[streamID]->Last_write_time = Simulator->Time();
@@ -123,6 +136,11 @@ namespace SSD_Components
 		if (plane_record->Translation_wf[streamID]->Current_page_write_index == pages_no_per_block) {
 			//Assign a new write frontier block
 			plane_record->Translation_wf[streamID] = NULL;
+			if (shared_mapping) {
+				for (unsigned int stream = 0; stream < total_concurrent_streams_no; ++stream) {
+					plane_record->Translation_wf[stream] = NULL;
+				}
+			}
 		}
 		if (!is_for_gc && (allocated_frontier || plane_record->Translation_wf[streamID] == NULL)) {
 			gc_and_wl_unit->Check_gc_required(plane_record->Get_free_block_pool_size(), page_address);
@@ -135,7 +153,7 @@ namespace SSD_Components
 		PlaneBookKeepingType* plane_record = &plane_manager[page_address.ChannelID][page_address.ChipID][page_address.DieID][page_address.PlaneID];
 		Block_Pool_Slot_Type& block = plane_record->Blocks[page_address.BlockID];
 		const uint64_t mask = ((uint64_t)1) << (page_address.PageID % 64);
-		if (block.Stream_id != stream_id || (block.Invalid_page_bitmap[page_address.PageID / 64] & mask) != 0) return;
+		if (block.Get_page_stream_id(page_address.PageID) != stream_id || (block.Invalid_page_bitmap[page_address.PageID / 64] & mask) != 0) return;
 		plane_record->Invalid_pages_count++;
 		plane_record->Valid_pages_count--;
 		block.Invalid_page_count++;

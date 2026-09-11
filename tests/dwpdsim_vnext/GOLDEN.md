@@ -156,10 +156,10 @@ exhausted` conclusion are removed. An extra whole GC block is not a proof of
 physical necessity: a victim can fit in an existing destination, freeing a
 block for the next collection. `AMU space` now reports only observed free
 blocks/pages and ongoing GC. The two-flow/104-page and six-flow/21-page
-no-TRIM traces still stall at 16 blocks. They are unresolved reproducers,
-not capacity-negative successes: invoke them explicitly with `--case
-shared-two-stalled` or `--case shared-six-stalled`; a stall fails the test.
-They are excluded from the default passing suite, not declared fixed.
+no-TRIM traces still stalled at `e55880b`. They are not capacity-negative
+successes. The shared-mapping repair below brings both back into the default
+passing suite; `--case shared-two-stalled` and `--case shared-six-stalled`
+retain their names so the same inputs can be checked against older binaries.
 
 `test_frontier_compaction.py` adds 12 public trace checks under both schedulers.
 Two flows share the unchanged 16-block plane. Flow 0 writes 104 pages, makes
@@ -173,10 +173,50 @@ read/program/erase transactions perform the move. No new destination block,
 cross-stream sharing, capacity change or synthetic completion is introduced.
 Tests require exact request IDs, dependencies, host bytes, effective TRIM,
 physical program conservation and drained TSU queues. This is a proven
-frontier-selection repair, not a claim to fix the unresolved no-TRIM traces.
+frontier-selection repair; by itself it did not fix the no-TRIM traces.
+
+### Shared mapping blocks under KV_THREE_GREEDY
+
+The no-TRIM reproducer can strand most of its free pages in separate,
+partially written mapping frontiers. GC cannot merge these while each block
+is assumed to belong to a single stream. Under `KV_THREE_GREEDY`, mapping
+writes now use one shared translation frontier per plane. Data frontiers and
+other GC policies retain their existing allocation rules. Physical/logical
+capacity, CMT size, final-block reserve and drain validation are unchanged.
+
+Mapping pages record their stream owner in block bookkeeping. Invalidation,
+mapping barriers and immediate/deferred GC and wear-leveling relocations use
+that page owner, not the first writer's block owner. Filling or retiring the
+frontier clears every alias; erasing the block clears its ownership records.
+At zero free blocks, ordinary mapping writebacks reserve destination space
+for all mapping GC victims, including victims created by other streams.
+Page read/program statistics follow page owners; erase statistics remain
+attributed to the block's initial allocator (pool/channel totals are unchanged
+by this attribution convention). Every move still issues normal NAND I/O.
+
+`test_overfull_gc.py` includes the unchanged two/six-flow no-TRIM failures
+and 30-block x 2048-page, six-flow first-fill/overwrite cases. It requires
+exact completions, dependencies, bytes, program conservation and drained
+queues. The large overwrite case has a 300-second timeout because tight
+space with 2048-page blocks can require many page relocations per host write.
+`test_mapping_ownership.py` additionally checks six domains with overlapping
+MVPN numbers, finite shared/partitioned CMT, repeated writes, reads and
+effective TRIM of all live data under both schedulers. These are independent
+trace-derived oracles; MQSim does not model payload bytes, so they do not
+constitute byte-for-byte data-integrity tests. The original five golden
+snapshots are not regenerated.
+
+As a mutation check, routing shared mapping GC pages by `block->Stream_id`
+again makes `test_mapping_ownership.py` fail with an MVPN unlock error.
+The unmodified `e55880b` binary fails the two-flow and 30-block first-fill
+inputs with overfull waiters and one free block; the new code must complete
+those same inputs, not accept their former error as an expected result.
 
 ```bash
 python3 tests/dwpdsim_vnext/test_overfull_gc.py --case shared-three
 python3 tests/dwpdsim_vnext/test_frontier_compaction.py
 python3 tests/dwpdsim_vnext/test_overfull_gc.py --case shared-two-expanded
+python3 tests/dwpdsim_vnext/test_overfull_gc.py --case shared-two-stalled
+python3 tests/dwpdsim_vnext/test_overfull_gc.py --case shared-thirty-overwrite
+python3 tests/dwpdsim_vnext/test_mapping_ownership.py
 ```

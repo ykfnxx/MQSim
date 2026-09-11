@@ -76,17 +76,17 @@ namespace SSD_Components
 							for (flash_page_ID_type pageID = 0; pageID < block->Current_page_write_index; pageID++) {
 								if (_my_instance->block_manager->Is_page_valid(block, pageID)) {
 									Stats::Total_page_movements_for_gc++;
-									Stats::Total_gc_page_movements_per_stream[block->Stream_id]++;
+									Stats::Total_gc_page_movements_per_stream[block->Get_page_stream_id(pageID)]++;
 									gc_wl_candidate_address.PageID = pageID;
 									if (_my_instance->use_copyback) {
-										gc_wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, _my_instance->sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+										gc_wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Get_page_stream_id(pageID), _my_instance->sector_no_per_page * SECTOR_SIZE_IN_BYTE,
 											NO_LPA, _my_instance->address_mapping_unit->Convert_address_to_ppa(gc_wl_candidate_address), NULL, 0, NULL, 0, INVALID_TIME_STAMP);
 										gc_wl_write->ExecutionMode = WriteExecutionModeType::COPYBACK;
 										_my_instance->tsu->Submit_transaction(gc_wl_write);
 									} else {
-										gc_wl_read = new NVM_Transaction_Flash_RD(Transaction_Source_Type::GC_WL, block->Stream_id, _my_instance->sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+										gc_wl_read = new NVM_Transaction_Flash_RD(Transaction_Source_Type::GC_WL, block->Get_page_stream_id(pageID), _my_instance->sector_no_per_page * SECTOR_SIZE_IN_BYTE,
 											NO_LPA, _my_instance->address_mapping_unit->Convert_address_to_ppa(gc_wl_candidate_address), gc_wl_candidate_address, NULL, 0, NULL, 0, INVALID_TIME_STAMP);
-										gc_wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, _my_instance->sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+										gc_wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Get_page_stream_id(pageID), _my_instance->sector_no_per_page * SECTOR_SIZE_IN_BYTE,
 											NO_LPA, NO_PPA, gc_wl_candidate_address, NULL, 0, gc_wl_read, 0, INVALID_TIME_STAMP);
 										gc_wl_write->ExecutionMode = WriteExecutionModeType::SIMPLE;
 										gc_wl_write->RelatedErase = gc_wl_erase_tr;
@@ -312,17 +312,17 @@ namespace SSD_Components
 				for (flash_page_ID_type pageID = 0; pageID < block->Current_page_write_index; pageID++) {
 					if (block_manager->Is_page_valid(block, pageID)) {
 						Stats::Total_page_movements_for_wl++;
-						Stats::Total_wl_page_movements_per_stream[block->Stream_id]++;
+						Stats::Total_wl_page_movements_per_stream[block->Get_page_stream_id(pageID)]++;
 						wl_candidate_address.PageID = pageID;
 						if (use_copyback) {
-							wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+							wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Get_page_stream_id(pageID), sector_no_per_page * SECTOR_SIZE_IN_BYTE,
 								NO_LPA, address_mapping_unit->Convert_address_to_ppa(wl_candidate_address), NULL, 0, NULL, 0, INVALID_TIME_STAMP);
 							wl_write->ExecutionMode = WriteExecutionModeType::COPYBACK;
 							tsu->Submit_transaction(wl_write);
 						} else {
-							wl_read = new NVM_Transaction_Flash_RD(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+							wl_read = new NVM_Transaction_Flash_RD(Transaction_Source_Type::GC_WL, block->Get_page_stream_id(pageID), sector_no_per_page * SECTOR_SIZE_IN_BYTE,
 								NO_LPA, address_mapping_unit->Convert_address_to_ppa(wl_candidate_address), wl_candidate_address, NULL, 0, NULL, 0, INVALID_TIME_STAMP);
-							wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+							wl_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Get_page_stream_id(pageID), sector_no_per_page * SECTOR_SIZE_IN_BYTE,
 								NO_LPA, NO_PPA, wl_candidate_address, NULL, 0, wl_read, 0, INVALID_TIME_STAMP);
 							wl_write->ExecutionMode = WriteExecutionModeType::SIMPLE;
 							wl_write->RelatedErase = wl_erase_tr;

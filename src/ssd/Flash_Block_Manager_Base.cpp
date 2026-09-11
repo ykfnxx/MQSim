@@ -107,6 +107,7 @@ namespace SSD_Components
 		}
 		Stream_id = NO_STREAM;
 		Holds_mapping_data = false;
+		std::vector<stream_id_type>().swap(Mapping_page_streams);
 		Erase_transaction = NULL;
 	}
 

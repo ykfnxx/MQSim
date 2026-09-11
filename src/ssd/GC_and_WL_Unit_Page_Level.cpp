@@ -240,17 +240,17 @@ namespace SSD_Components
 					for (flash_page_ID_type pageID = 0; pageID < block->Current_page_write_index; pageID++) {
 							if (block_manager->Is_page_valid(block, pageID)) {
 								Stats::Total_page_movements_for_gc++;
-								Stats::Total_gc_page_movements_per_stream[block->Stream_id]++;
+								Stats::Total_gc_page_movements_per_stream[block->Get_page_stream_id(pageID)]++;
 							gc_candidate_address.PageID = pageID;
 							if (use_copyback) {
-								gc_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+								gc_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Get_page_stream_id(pageID), sector_no_per_page * SECTOR_SIZE_IN_BYTE,
 									NO_LPA, address_mapping_unit->Convert_address_to_ppa(gc_candidate_address), NULL, 0, NULL, 0, INVALID_TIME_STAMP);
 								gc_write->ExecutionMode = WriteExecutionModeType::COPYBACK;
 								tsu->Submit_transaction(gc_write);
 							} else {
-								gc_read = new NVM_Transaction_Flash_RD(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+								gc_read = new NVM_Transaction_Flash_RD(Transaction_Source_Type::GC_WL, block->Get_page_stream_id(pageID), sector_no_per_page * SECTOR_SIZE_IN_BYTE,
 									NO_LPA, address_mapping_unit->Convert_address_to_ppa(gc_candidate_address), gc_candidate_address, NULL, 0, NULL, 0, INVALID_TIME_STAMP);
-								gc_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Stream_id, sector_no_per_page * SECTOR_SIZE_IN_BYTE,
+								gc_write = new NVM_Transaction_Flash_WR(Transaction_Source_Type::GC_WL, block->Get_page_stream_id(pageID), sector_no_per_page * SECTOR_SIZE_IN_BYTE,
 									NO_LPA, NO_PPA, gc_candidate_address, NULL, 0, gc_read, 0, INVALID_TIME_STAMP);
 								gc_write->ExecutionMode = WriteExecutionModeType::SIMPLE;
 								gc_write->RelatedErase = gc_erase_tr;
